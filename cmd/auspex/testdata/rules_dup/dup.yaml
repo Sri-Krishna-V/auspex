@@ -1,0 +1,9 @@
+id: secrets.agent_read_env
+version: "9.9"
+enabled: true
+enforce: true
+title: Operator replacement for the built-in rule
+description: Test fixture proving that all operator-authored fields take precedence.
+severity: low
+expr: 'event.event_type == "command.exec" && shell_commands.exists(command, command.argv.exists(arg, arg == "OVERRIDE_ONLY"))'
+tags: [operator_override]

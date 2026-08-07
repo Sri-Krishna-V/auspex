@@ -1,0 +1,6 @@
+id: shared.collide
+version: "1.0"
+enabled: true
+title: Rule in the first same-named source
+severity: low
+expr: 'event.event_type == "command.exec"'

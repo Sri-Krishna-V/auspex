@@ -1,0 +1,6 @@
+id: broken.rule
+version: "1.0"
+enabled: true
+title: Broken rule
+severity: nonsense
+expr: 'event.event_type == "command.exec"'

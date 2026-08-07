@@ -1,0 +1,13 @@
+id: chain.env_read_then_curl
+version: "1.0"
+title: Env file read followed by curl egress
+description: >
+  Within one session, the agent read a .env file and later ran curl —
+  each step benign alone, together the classic read-then-exfiltrate shape.
+severity: high
+sequence:
+  within: 30m
+  within_events: 64
+  steps:
+    - expr: 'event.event_type == "file.read" && event.file_path.contains(".env")'
+    - expr: 'event.event_type == "command.exec" && event.command.contains("curl")'

@@ -1,0 +1,9 @@
+id: custom.terraform_destroy
+version: "1.0"
+enabled: true
+title: Agent ran terraform destroy
+description: The agent invoked `terraform destroy`, which tears down infrastructure.
+severity: high
+expr: |
+  event.event_type == "command.exec" &&
+  event.command.matches("(^|[|;&(]|&&)\\s*terraform\\s+destroy(\\s|$)")
