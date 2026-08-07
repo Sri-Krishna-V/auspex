@@ -15,6 +15,17 @@ func setTestHome(t *testing.T, home string) {
 	t.Cleanup(func() { inventoryManagedHooksPath = previousManagedHooksPath })
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	// Every agent config-dir override must be cleared, not just some: any one left
+	// set lets that agent's path resolve outside the temp home and report host
+	// state as a detection. See agentDescriptor.configDir for the full set.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("COPILOT_HOME", "")
+	t.Setenv("GEMINI_CLI_HOME", "")
+	t.Setenv("GROK_HOME", "")
+	t.Setenv("HERMES_HOME", "")
+	t.Setenv("KIRO_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("PI_CODING_AGENT_SESSION_DIR", "")
 	t.Setenv("PI_CODING_AGENT_DIR", "")
 	t.Setenv("KIMI_CODE_HOME", "")
