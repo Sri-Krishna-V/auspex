@@ -1,0 +1,109 @@
+id: impact.disk_wipe
+version: "1.4"
+enabled: true
+title: Destructive disk operation requested
+description: |-
+  The agent requested a destructive disk, partition, or filesystem operation against
+  a physical block device or Windows volume. Read-only inspection, tool-native no-op
+  modes, and loop or RAM devices do not match.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.redirects.exists(redirect,
+      redirect.op in ["write", "append", "read_write"] &&
+      redirect.target.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+    ) ||
+    (
+      command.name.matches("(?i)^dd$") &&
+      command.argv.exists(arg,
+        arg.matches("^of=/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^mk(fs(\\.\\w+)?|e2fs|dosfs|ntfs|swap|exfatfs)$") &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(shred|blkdiscard|tee)$") &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^wipefs$") &&
+      command.argv.exists(arg, arg.matches("(?i)^(-a|--all)$")) &&
+      !command.argv.exists(arg, arg.matches("(?i)^(-n|--no-act)$")) &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^sgdisk$") &&
+      command.argv.exists(arg, arg.matches("(?i)^(--zap-all|-Z|-o|--clear)$")) &&
+      !command.argv.exists(arg, arg.matches("(?i)^(-P|--pretend)$")) &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^hdparm$") &&
+      command.argv.exists(arg,
+        arg.matches("(?i)^(--security-erase|--security-disable|--trim-sector-ranges|--write-sector|--make-bad-sector|--fallocate|--dco-restore)(=.*)?$")
+      ) &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^nvme$") &&
+      command.argv.size() > 1 &&
+      command.argv[1].matches("(?i)^(format|sanitize|write-zeroes|write|delete-ns|detach-ns)$") &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^cryptsetup$") &&
+      command.argv.exists(arg, arg.matches("(?i)^(luksFormat|luksErase|reencrypt|erase)$")) &&
+      command.argv.exists(arg,
+        arg.matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^parted$") &&
+      lists.range(command.argv.size() - 1).exists(i,
+        i > 0 &&
+        command.argv[i].matches("^/dev/(sd[a-z][0-9]*|r?disk[0-9]+(s[0-9]+)?|nvme[0-9]+n[0-9]+(p[0-9]+)?|vd[a-z][0-9]*|xvd[a-z][0-9]*|hd[a-z][0-9]*|mmcblk[0-9]+(p[0-9]+)?|md[0-9]+|dm-[0-9]+|mapper/[^\\s]+|disk/by-id/[^\\s]+)$") &&
+        command.argv[i + 1].matches("(?i)^(mklabel|mkpart|mkpartfs|resizepart|rescue|mkfs|rm)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^diskutil$") &&
+      command.argv.exists(arg, arg.matches("(?i)^(eraseDisk|zeroDisk|randomDisk|secureErase)$")) &&
+      command.argv.exists(arg, arg.matches("(?i)^(/dev/)?disk[0-9]+$"))
+    ) ||
+    (
+      command.name.matches("(?i)^clear-disk$") &&
+      command.argv.exists(arg, arg.matches("(?i)^-(removedata|removeoem)$"))
+    ) ||
+    (
+      command.name.matches("(?i)^format-volume$") &&
+      (
+        command.argv.exists(arg,
+          arg.matches("(?i)^-(driveletter|path|objectid|inputobject|partition)(:|=).+$")
+        ) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^-(driveletter|path|objectid|inputobject|partition)$") &&
+          !command.argv[i + 1].startsWith("-")
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^format(\\.com|\\.exe)?$") &&
+      command.argv.exists(arg, arg.matches("(?i)^[a-z]:$"))
+    )
+  )
+tags: [attack.t1561, attack.t1485, destructive_action]

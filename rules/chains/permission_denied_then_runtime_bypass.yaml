@@ -1,0 +1,104 @@
+id: chain.permission_denied_then_runtime_bypass
+version: "1.3"
+enabled: true
+title: Permission denial followed by an agent runtime bypass request
+description: |-
+  Within one session, a permission request was denied and the agent then requested a child
+  coding-agent invocation in a runtime-specific unattended mode. This detects a concrete
+  circumvention path without treating a generic tool error or one Codex policy flag as a bypass.
+severity: high
+sequence:
+  within_events: 16
+  steps:
+    - expr: |-
+        event.event_type == "permission.denied"
+    - expr: |-
+        (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+        shell_commands.exists(command,
+          (
+            (
+              command.name.matches("(?i)^claude$") ||
+              (
+                command.name.matches("(?i)^npx$") &&
+                ((command.argv.size() > 1 && command.argv[1] == "claude") ||
+                 (command.argv.size() > 2 && command.argv[1] == "-y" && command.argv[2] == "claude"))
+              ) ||
+              (
+                command.name.matches("(?i)^pnpm$") &&
+                command.argv.size() > 2 && command.argv[1] == "dlx" && command.argv[2] == "claude"
+              ) ||
+              (
+                command.name.matches("(?i)^bunx$") &&
+                command.argv.size() > 1 && command.argv[1] == "claude"
+              )
+            ) &&
+            (
+              command.argv.exists(arg, arg == "--dangerously-skip-permissions") ||
+              command.argv.exists(arg, arg.matches("(?i)^--permission-mode=bypasspermissions$")) ||
+              lists.range(command.argv.size() - 1).exists(i,
+                command.argv[i] == "--permission-mode" &&
+                command.argv[i + 1].matches("(?i)^bypasspermissions$")
+              )
+            )
+          ) ||
+          (
+            (
+              command.name.matches("(?i)^codex$") ||
+              (
+                command.name.matches("(?i)^npx$") &&
+                ((command.argv.size() > 1 && command.argv[1] == "codex") ||
+                 (command.argv.size() > 2 && command.argv[1] == "-y" && command.argv[2] == "codex"))
+              ) ||
+              (
+                command.name.matches("(?i)^pnpm$") &&
+                command.argv.size() > 2 && command.argv[1] == "dlx" && command.argv[2] == "codex"
+              ) ||
+              (
+                command.name.matches("(?i)^bunx$") &&
+                command.argv.size() > 1 && command.argv[1] == "codex"
+              )
+            ) &&
+            (
+              command.argv.exists(arg, arg == "--dangerously-bypass-approvals-and-sandbox") ||
+              (
+                (
+                  command.argv.exists(arg, arg.matches("(?i)^(--sandbox|-s)=danger-full-access$")) ||
+                  lists.range(command.argv.size() - 1).exists(i,
+                    command.argv[i].matches("(?i)^(--sandbox|-s)$") &&
+                    command.argv[i + 1].matches("(?i)^danger-full-access$")
+                  )
+                ) &&
+                (
+                  command.argv.exists(arg, arg.matches("(?i)^(--ask-for-approval|--approval-policy|-a)=never$")) ||
+                  lists.range(command.argv.size() - 1).exists(i,
+                    command.argv[i].matches("(?i)^(--ask-for-approval|--approval-policy|-a)$") &&
+                    command.argv[i + 1].matches("(?i)^never$")
+                  )
+                )
+              )
+            )
+          ) ||
+          (
+            (
+              command.name.matches("(?i)^(gemini|opencode)$") ||
+              (
+                command.name.matches("(?i)^npx$") &&
+                (
+                  (command.argv.size() > 1 && command.argv[1].matches("(?i)^(gemini|opencode)$")) ||
+                  (command.argv.size() > 2 && command.argv[1] == "-y" && command.argv[2].matches("(?i)^(gemini|opencode)$"))
+                )
+              ) ||
+              (
+                command.name.matches("(?i)^pnpm$") &&
+                command.argv.size() > 2 && command.argv[1] == "dlx" &&
+                command.argv[2].matches("(?i)^(gemini|opencode)$")
+              ) ||
+              (
+                command.name.matches("(?i)^bunx$") &&
+                command.argv.size() > 1 && command.argv[1].matches("(?i)^(gemini|opencode)$")
+              )
+            ) &&
+            command.argv.exists(arg, arg == "--yolo")
+          )
+        )
+tags: [permission_bypass, attack.t1562.001]

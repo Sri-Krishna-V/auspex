@@ -1,0 +1,43 @@
+id: impact.fork_bomb
+version: "1.3"
+enabled: true
+title: Unbounded fork-bomb payload requested
+description: |-
+  The agent requested a canonical unbounded recursive-fork payload. Only high-confidence
+  shell, Perl, and Ruby forms are included; code search, documentation, and bounded
+  process tests are excluded.
+severity: critical
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  (
+    shell_commands.exists(command,
+      command.name in [":", "fork"] &&
+      command.function_call &&
+      command.recursive &&
+      command.pipeline_id > 0 &&
+      shell_commands.exists(peer,
+        peer.statement_id != command.statement_id &&
+        peer.pipeline_id == command.pipeline_id &&
+        peer.name == command.name &&
+        peer.function_call &&
+        peer.recursive
+      )
+    ) ||
+    shell_commands.exists(command,
+      (
+        command.name.matches("(?i)^perl$") &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i] == "-e" &&
+          command.argv[i + 1].matches("(?i)^\\s*fork\\s+while\\s+fork\\s*$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^ruby$") &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i] == "-e" &&
+          command.argv[i + 1].matches("(?i)^\\s*loop\\s*\\{\\s*fork\\s*\\}\\s*$")
+        )
+      )
+    )
+  )
+tags: [attack.t1499]

@@ -1,0 +1,80 @@
+id: recon.cloud_metadata
+version: "1.4"
+enabled: true
+title: Cloud instance metadata service targeted
+description: |-
+  A fetch command or normalized network event targeted an AWS/Azure IMDS address, the GCP
+  metadata host, or an ECS task-role endpoint. These endpoints can return short-lived
+  workload credentials; public hosts that merely use metadata-like paths are excluded.
+severity: high
+expr: |-
+  (
+    event.event_type == "network.indicator" &&
+    event.url.matches("(?i)^https?://(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)(:[0-9]+)?(/|$)")
+  ) || (
+    (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+    shell_commands.exists(command,
+      (
+        command.name.matches("(?i)^curl(\\.exe)?$") &&
+        !command.argv.exists(arg, arg.matches("(?i)^(--help|--manual|--version)$")) &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^(https?://)?(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)(:[0-9]+)?(/.*)?$") &&
+          !command.argv[i - 1].matches("(?i)^(-o|--output|-H|--header|-X|--request|-m|--max-time|--connect-timeout|-A|--user-agent|-d|--data|--data-raw|--data-binary|-F|--form|-T|--upload-file|-x|--proxy|-b|--cookie|-c|--cookie-jar|--cert|--key|--oauth2-bearer|--resolve)$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^wget(\\.exe)?$") &&
+        !command.argv.exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^(https?://)?(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)(:[0-9]+)?(/.*)?$") &&
+          !command.argv[i - 1].matches("(?i)^(-O|--output-document|-T|--timeout|--header|--method|--post-data|--post-file|--user-agent|--referer|--certificate|--private-key)$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(http|https|httpie|fetch)(\\.exe)?$") &&
+        !command.argv.exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^(https?://)?(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)(:[0-9]+)?(/.*)?$") &&
+          !command.argv[i - 1].matches("(?i)^(-o|--output)$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(invoke-webrequest|invoke-restmethod|iwr|irm)$") &&
+        !command.argv.exists(arg, arg.matches("(?i)^(-\\?|--help|-whatif(:.*)?)$")) &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^(https?://)?(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)(:[0-9]+)?(/.*)?$") &&
+          !command.argv[i - 1].matches("(?i)^-(outfile|headers|method|body|credential|proxy)$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(nc|ncat)(\\.exe)?$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)$") &&
+          !command.argv[i - 1].matches("(?i)^(-e|-c|-w|--wait|--idle-timeout|-p|-s|--source|--proxy|--proxy-type)$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(python[0-9.]*|ruby|perl|php|node|deno|bun)(\\.exe)?$") &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-c|-e|-r|--eval|--command)$") &&
+          command.argv[i + 1].matches("(?is)(requests\\.get|urllib|Net::HTTP|file_get_contents|fetch\\s*\\(|http\\.Get).*?(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)|(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal).*?(requests\\.get|urllib|Net::HTTP|file_get_contents|fetch\\s*\\(|http\\.Get)")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(pwsh|powershell)(\\.exe)?$") &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-c|-command)$") &&
+          command.argv[i + 1].matches("(?is)(invoke-webrequest|invoke-restmethod|\\biwr\\b|\\birm\\b).*?(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal)|(169\\.254\\.169\\.254|169\\.254\\.170\\.2|2852039166|0xa9fea9fe|0xa9\\.0xfe\\.0xa9\\.0xfe|0251\\.0376\\.0251\\.0376|\\[fd00:ec2::254\\]|metadata\\.google\\.internal).*?(invoke-webrequest|invoke-restmethod|\\biwr\\b|\\birm\\b)")
+        )
+      ) ||
+      command.redirects.exists(redirect,
+        redirect.target.matches("(?i)^/dev/tcp/(169\\.254\\.169\\.254|169\\.254\\.170\\.2)/[0-9]+$")
+      )
+    )
+  )
+tags: [attack.t1552.005]

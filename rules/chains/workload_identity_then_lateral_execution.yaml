@@ -1,0 +1,296 @@
+id: chain.workload_identity_then_lateral_execution
+version: "1.6"
+enabled: true
+title: Workload token access followed by lateral execution
+description: |-
+  Within one session, the agent requested access to a projected workload identity token
+  and later requested execution in another workload or through an explicitly remote
+  container daemon. The chain reports the pivot shape without claiming that the token
+  value was used by the second action.
+severity: high
+sequence:
+  within_events: 32
+  steps:
+    - expr: |-
+        (
+          event.event_type == "file.read" &&
+          event.file_path.matches("^/var/run/secrets/(kubernetes\\.io/serviceaccount/token|eks\\.amazonaws\\.com/serviceaccount/token|azure/tokens/azure-identity-token)$")
+        ) || (
+          (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+          shell_commands.exists(command,
+            command.redirects.exists(redirect,
+              redirect.op in ["read", "read_write"] &&
+              redirect.target.matches("(?i)^(/var/run/secrets/(kubernetes\\.io/serviceaccount/token|eks\\.amazonaws\\.com/serviceaccount/token|azure/tokens/azure-identity-token)|\\$\\{?(AWS_WEB_IDENTITY_TOKEN_FILE|AZURE_FEDERATED_TOKEN_FILE)\\}?)$") &&
+              (
+                !redirect.target.startsWith("$") ||
+                redirect.target_expands
+              )
+            ) ||
+            (
+              (
+                command.name.matches("(?i)^(cat|less|more|head|tail|source|\\.|xxd|od|strings|nl|tac|bat|base64|get-content|gc)(\\.exe)?$") ||
+                (
+                  command.dialect == "powershell" &&
+                  command.name.matches("(?i)^type$")
+                ) ||
+                (
+                  command.dialect == "cmd" &&
+                  command.name.matches("(?i)^type(\\.exe)?$")
+                )
+              ) &&
+              !command.argv.exists(arg, arg.matches("(?i)^(--help|--version|/\\?)$")) &&
+              command.arguments.slice(1, command.arguments.size()).exists(arg,
+                arg.value.matches("(?i)^(/var/run/secrets/(kubernetes\\.io/serviceaccount/token|eks\\.amazonaws\\.com/serviceaccount/token|azure/tokens/azure-identity-token)|\\$\\{?(AWS_WEB_IDENTITY_TOKEN_FILE|AZURE_FEDERATED_TOKEN_FILE)\\}?)$") &&
+                (
+                  !arg.value.startsWith("$") ||
+                  arg.expands
+                )
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^(cp|scp)$") &&
+              !command.argv.exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              lists.range(command.arguments.size()).exists(i,
+                i > 0 &&
+                command.arguments[i].value.matches("(?i)^(/var/run/secrets/(kubernetes\\.io/serviceaccount/token|eks\\.amazonaws\\.com/serviceaccount/token|azure/tokens/azure-identity-token)|\\$\\{?(AWS_WEB_IDENTITY_TOKEN_FILE|AZURE_FEDERATED_TOKEN_FILE)\\}?)$") &&
+                (
+                  !command.arguments[i].value.startsWith("$") ||
+                  command.arguments[i].expands
+                ) &&
+                !(i > 0 && command.argv[i - 1].matches("(?i)^(-t|--target-directory)$")) &&
+                command.argv.slice(i + 1, command.argv.size()).exists(arg, !arg.startsWith("-"))
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^dd$") &&
+              command.arguments.slice(1, command.arguments.size()).exists(arg,
+                arg.value.matches("(?i)^if=(/var/run/secrets/(kubernetes\\.io/serviceaccount/token|eks\\.amazonaws\\.com/serviceaccount/token|azure/tokens/azure-identity-token)|\\$\\{?(AWS_WEB_IDENTITY_TOKEN_FILE|AZURE_FEDERATED_TOKEN_FILE)\\}?)$") &&
+                (
+                  !arg.value.startsWith("if=$") ||
+                  arg.expands
+                )
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^copy-item$") &&
+              !command.argv.exists(arg, arg.matches("(?i)^(-\\?|--help)$")) &&
+              lists.range(command.arguments.size()).exists(i,
+                i > 0 &&
+                command.arguments[i].value.matches("(?i)^(/var/run/secrets/(kubernetes\\.io/serviceaccount/token|eks\\.amazonaws\\.com/serviceaccount/token|azure/tokens/azure-identity-token)|\\$\\{?(AWS_WEB_IDENTITY_TOKEN_FILE|AZURE_FEDERATED_TOKEN_FILE)\\}?)$") &&
+                (
+                  !command.arguments[i].value.startsWith("$") ||
+                  command.arguments[i].expands
+                ) &&
+                (
+                  i == 1 ||
+                  command.argv[i - 1].matches("(?i)^-(path|literalpath)$") ||
+                  lists.range(i).all(j,
+                    j == 0 ||
+                    command.argv[j].matches("(?i)^-(force|recurse|container|passthru|whatif|confirm)(:.*)?$")
+                  )
+                )
+              )
+            )
+          )
+        )
+    - expr: |-
+        (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+        shell_commands.exists(command,
+          (
+            command.name.matches("(?i)^(kubectl|oc)(\\.exe)?$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              !command.argv.slice(1, i).exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              (
+                (
+                  command.argv[i].matches("(?i)^exec$") &&
+                  lists.range(command.argv.size()).exists(target,
+                    target > i &&
+                    !command.argv[target].startsWith("-") &&
+                    !command.argv.slice(i + 1, target).exists(arg,
+                      arg.matches("(?i)^(--help|--version)$")
+                    ) &&
+                    !(
+                      target > i + 1 &&
+                      command.argv[target - 1].matches("(?i)^(-c|--container|-f|--filename|--pod-running-timeout|--profile|--profile-output)$")
+                    )
+                  )
+                ) ||
+                (
+                  command.argv[i].matches("(?i)^rsh$") &&
+                  command.name.matches("(?i)^oc(\\.exe)?$") &&
+                  lists.range(command.argv.size()).exists(target,
+                    target > i &&
+                    !command.argv[target].startsWith("-") &&
+                    !command.argv.slice(i + 1, target).exists(arg,
+                      arg.matches("(?i)^(--help|--version)$")
+                    ) &&
+                    !(
+                      target > i + 1 &&
+                      command.argv[target - 1].matches("(?i)^(-c|--container|--shell)$")
+                    )
+                  )
+                ) ||
+                (
+                  command.argv[i].matches("(?i)^debug$") &&
+                  lists.range(command.argv.size()).exists(target,
+                    target > i &&
+                    command.argv[target].matches("(?i)^(node|pod)/[^/]+$") &&
+                    !command.argv.slice(i + 1, target).exists(arg,
+                      arg.matches("(?i)^(--help|--version)$")
+                    ) &&
+                    !(
+                      target > i + 1 &&
+                      command.argv[target - 1].matches("(?i)^(--copy-to|-c|--container|--image|--profile|--set-image|--target)$")
+                    )
+                  )
+                )
+              ) &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(-n|--namespace|--context|--cluster|--user|--kubeconfig|--server|--request-timeout|--as|--as-group|--token|--certificate-authority|--client-certificate|--client-key|--tls-server-name|--cache-dir|--profile|--profile-output)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^crictl(\\.exe)?$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              !command.argv.slice(1, i).exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              command.argv[i].matches("(?i)^exec$") &&
+              lists.range(command.argv.size()).exists(target,
+                target > i &&
+                !command.argv[target].startsWith("-") &&
+                !command.argv.slice(i + 1, target).exists(arg,
+                  arg.matches("(?i)^(--help|--version)$")
+                ) &&
+                !(
+                  target > i + 1 &&
+                  command.argv[target - 1].matches("(?i)^(--cwd|--env|--exec-id)$")
+                )
+              ) &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(-r|--runtime-endpoint|-i|--image-endpoint|-t|--timeout|--pull-image-on-create)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^ctr(\\.exe)?$") &&
+            lists.range(command.argv.size() - 1).exists(i,
+              i > 0 &&
+              !command.argv.slice(1, i).exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              command.argv[i].matches("(?i)^tasks?$") &&
+              command.argv[i + 1].matches("(?i)^exec$") &&
+              lists.range(command.argv.size()).exists(target,
+                target > i + 1 &&
+                !command.argv[target].startsWith("-") &&
+                !command.argv.slice(i + 2, target).exists(arg,
+                  arg.matches("(?i)^(--help|--version)$")
+                ) &&
+                !(
+                  target > i + 2 &&
+                  command.argv[target - 1].matches("(?i)^(--cwd|--env|--env-file|--exec-id|--groups|--log-uri|--process|--user)$")
+                )
+              ) &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(-a|--address|-n|--namespace|--timeout|--connect-timeout)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^docker(\\.exe)?$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              !command.argv.slice(1, i).exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              command.argv[i].matches("(?i)^exec$") &&
+              lists.range(command.argv.size()).exists(target,
+                target > i &&
+                !command.argv[target].startsWith("-") &&
+                !command.argv.slice(i + 1, target).exists(arg,
+                  arg.matches("(?i)^(--help|--version)$")
+                ) &&
+                !(
+                  target > i + 1 &&
+                  command.argv[target - 1].matches("(?i)^(-e|--env|--env-file|--detach-keys|-u|--user|-w|--workdir)$")
+                )
+              ) &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(-H|--host|--config|--context|--log-level)$")
+                )
+              ) &&
+              (
+                command.argv.slice(1, i).exists(arg,
+                  arg.matches("(?i)^(-H|--host)=(ssh|tcp)://.+$")
+                ) ||
+                lists.range(i - 1).exists(j,
+                  command.argv[j].matches("(?i)^(-H|--host)$") &&
+                  command.argv[j + 1].matches("(?i)^(ssh|tcp)://.+$")
+                ) ||
+                command.wrappers.exists(wrapper,
+                  wrapper.name.matches("(?i)^env$") &&
+                  wrapper.argv.exists(arg, arg.matches("(?i)^DOCKER_HOST=(ssh|tcp)://.+$"))
+                ) ||
+                command.assignments.exists(assignment,
+                  !assignment.append &&
+                  assignment.name == "DOCKER_HOST" &&
+                  assignment.value.matches("(?i)^(ssh|tcp)://.+$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^podman(\\.exe)?$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              !command.argv.slice(1, i).exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              command.argv[i].matches("(?i)^exec$") &&
+              lists.range(command.argv.size()).exists(target,
+                target > i &&
+                !command.argv[target].startsWith("-") &&
+                !command.argv.slice(i + 1, target).exists(arg,
+                  arg.matches("(?i)^(--help|--version)$")
+                ) &&
+                !(
+                  target > i + 1 &&
+                  command.argv[target - 1].matches("(?i)^(-e|--env|--env-file|--detach-keys|--preserve-fd|--preserve-fds|-u|--user|-w|--workdir)$")
+                )
+              ) &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(--url|--connection|--identity|--log-level)$")
+                )
+              ) &&
+              (
+                command.argv.slice(1, i).exists(arg,
+                  arg.matches("(?i)^--url=(ssh|tcp)://.+$")
+                ) ||
+                lists.range(i - 1).exists(j,
+                  command.argv[j].matches("(?i)^--url$") &&
+                  command.argv[j + 1].matches("(?i)^(ssh|tcp)://.+$")
+                )
+              )
+            )
+          )
+        )
+tags: [attack.t1528, attack.t1609]

@@ -1,0 +1,38 @@
+id: exfil.curl_post_file
+version: "1.4"
+enabled: true
+title: Sensitive-file upload requested with curl
+description: |-
+  A curl command requested upload of a known credential, browser-session, workload-token, or process
+  environment file to an http(s) endpoint by @-referencing it in a data or form flag.
+  curl upload-file and wget post-file forms remain owned by env_capture_to_network.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.name.matches("(?i)^curl(\\.exe)?$") &&
+    !command.argv.exists(arg, arg in ["-h", "--help", "--manual", "-V", "--version"]) &&
+    (
+      command.argv.exists(arg, arg.matches("(?i)^https?://[^\\s]+$|^--url=https?://[^\\s]+$")) ||
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i] == "--url" &&
+        command.argv[i + 1].matches("(?i)^https?://[^\\s]+$")
+      )
+    ) &&
+    (
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^(-d|-F|--data|--data-binary|--data-raw|--data-urlencode|--form)$") &&
+        (
+          command.argv[i + 1].matches("(?i)^([A-Za-z0-9_.-]+=)?@(?:.*[/\\\\])?(\\.env(\\.(local|production|prod|development|dev|staging|test))?|\\.ssh[/\\\\]id_(rsa|dsa|ecdsa|ed25519)(_sk)?|\\.aws[/\\\\]credentials|\\.kube[/\\\\]config|kubeconfig|\\.npmrc|\\.pypirc|\\.docker[/\\\\]config\\.json|\\.config[/\\\\]gcloud[/\\\\](application_default_credentials|legacy_credentials[/\\\\][^/\\\\\\s]+[/\\\\]adc)\\.json|\\.config[/\\\\]gh[/\\\\]hosts\\.yml|\\.git-credentials|\\.netrc|\\.pgpass|\\.(cache[/\\\\])?huggingface[/\\\\]token|\\.config[/\\\\]huggingface[/\\\\]token|\\.config[/\\\\]pypoetry[/\\\\]auth\\.toml|\\.kaggle[/\\\\]kaggle\\.json|var[/\\\\]run[/\\\\]secrets[/\\\\](kubernetes\\.io[/\\\\]serviceaccount[/\\\\]token|eks\\.amazonaws\\.com[/\\\\]serviceaccount[/\\\\]token|azure[/\\\\]tokens[/\\\\]azure-identity-token)|proc[/\\\\](self|[0-9]+)[/\\\\]environ)$") ||
+          command.argv[i + 1].matches("(?i)^([A-Za-z0-9_.-]+=)?@.*(Library[/\\\\]Application Support[/\\\\](Google[/\\\\]Chrome|Chromium|BraveSoftware[/\\\\]Brave-Browser|Microsoft Edge)|\\.config[/\\\\](google-chrome|chromium|BraveSoftware[/\\\\]Brave-Browser|microsoft-edge)|\\.mozilla[/\\\\]firefox|AppData[/\\\\]Local[/\\\\](Google[/\\\\]Chrome|Chromium|BraveSoftware[/\\\\]Brave-Browser|Microsoft[/\\\\]Edge)|AppData[/\\\\]Roaming[/\\\\]Mozilla[/\\\\]Firefox).*[/\\\\](Login Data|Cookies|Network[/\\\\]Cookies|cookies\\.sqlite|logins\\.json|key4\\.db)$")
+        )
+      ) ||
+      command.argv.exists(arg,
+        arg.matches("(?i)^(--data|--data-binary|--data-raw|--data-urlencode|--form)=([A-Za-z0-9_.-]+=)?@(?:.*[/\\\\])?(\\.env(\\.(local|production|prod|development|dev|staging|test))?|\\.ssh[/\\\\]id_(rsa|dsa|ecdsa|ed25519)(_sk)?|\\.aws[/\\\\]credentials|\\.kube[/\\\\]config|kubeconfig|\\.npmrc|\\.pypirc|\\.docker[/\\\\]config\\.json|\\.config[/\\\\]gcloud[/\\\\](application_default_credentials|legacy_credentials[/\\\\][^/\\\\\\s]+[/\\\\]adc)\\.json|\\.config[/\\\\]gh[/\\\\]hosts\\.yml|\\.git-credentials|\\.netrc|\\.pgpass|\\.(cache[/\\\\])?huggingface[/\\\\]token|\\.config[/\\\\]huggingface[/\\\\]token|\\.config[/\\\\]pypoetry[/\\\\]auth\\.toml|\\.kaggle[/\\\\]kaggle\\.json|var[/\\\\]run[/\\\\]secrets[/\\\\](kubernetes\\.io[/\\\\]serviceaccount[/\\\\]token|eks\\.amazonaws\\.com[/\\\\]serviceaccount[/\\\\]token|azure[/\\\\]tokens[/\\\\]azure-identity-token)|proc[/\\\\](self|[0-9]+)[/\\\\]environ)$") ||
+        arg.matches("(?i)^(-d|-F)([A-Za-z0-9_.-]+=)?@(?:.*[/\\\\])?(\\.env(\\.(local|production|prod|development|dev|staging|test))?|\\.ssh[/\\\\]id_(rsa|dsa|ecdsa|ed25519)(_sk)?|\\.aws[/\\\\]credentials|\\.kube[/\\\\]config|kubeconfig|\\.npmrc|\\.pypirc|\\.docker[/\\\\]config\\.json|\\.config[/\\\\]gcloud[/\\\\](application_default_credentials|legacy_credentials[/\\\\][^/\\\\\\s]+[/\\\\]adc)\\.json|\\.config[/\\\\]gh[/\\\\]hosts\\.yml|\\.git-credentials|\\.netrc|\\.pgpass|\\.(cache[/\\\\])?huggingface[/\\\\]token|\\.config[/\\\\]huggingface[/\\\\]token|\\.config[/\\\\]pypoetry[/\\\\]auth\\.toml|\\.kaggle[/\\\\]kaggle\\.json|var[/\\\\]run[/\\\\]secrets[/\\\\](kubernetes\\.io[/\\\\]serviceaccount[/\\\\]token|eks\\.amazonaws\\.com[/\\\\]serviceaccount[/\\\\]token|azure[/\\\\]tokens[/\\\\]azure-identity-token)|proc[/\\\\](self|[0-9]+)[/\\\\]environ)$") ||
+        arg.matches("(?i)^(--data|--data-binary|--data-raw|--data-urlencode|--form)=([A-Za-z0-9_.-]+=)?@.*(Library[/\\\\]Application Support[/\\\\](Google[/\\\\]Chrome|Chromium|BraveSoftware[/\\\\]Brave-Browser|Microsoft Edge)|\\.config[/\\\\](google-chrome|chromium|BraveSoftware[/\\\\]Brave-Browser|microsoft-edge)|\\.mozilla[/\\\\]firefox|AppData[/\\\\]Local[/\\\\](Google[/\\\\]Chrome|Chromium|BraveSoftware[/\\\\]Brave-Browser|Microsoft[/\\\\]Edge)|AppData[/\\\\]Roaming[/\\\\]Mozilla[/\\\\]Firefox).*[/\\\\](Login Data|Cookies|Network[/\\\\]Cookies|cookies\\.sqlite|logins\\.json|key4\\.db)$") ||
+        arg.matches("(?i)^(-d|-F)([A-Za-z0-9_.-]+=)?@.*(Library[/\\\\]Application Support[/\\\\](Google[/\\\\]Chrome|Chromium|BraveSoftware[/\\\\]Brave-Browser|Microsoft Edge)|\\.config[/\\\\](google-chrome|chromium|BraveSoftware[/\\\\]Brave-Browser|microsoft-edge)|\\.mozilla[/\\\\]firefox|AppData[/\\\\]Local[/\\\\](Google[/\\\\]Chrome|Chromium|BraveSoftware[/\\\\]Brave-Browser|Microsoft[/\\\\]Edge)|AppData[/\\\\]Roaming[/\\\\]Mozilla[/\\\\]Firefox).*[/\\\\](Login Data|Cookies|Network[/\\\\]Cookies|cookies\\.sqlite|logins\\.json|key4\\.db)$")
+      )
+    )
+  )
+tags: [credential_exfil]

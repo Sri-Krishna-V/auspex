@@ -1,0 +1,69 @@
+id: privilege.elevated_shell
+version: "1.3"
+enabled: true
+title: Agent requested an elevated interactive shell
+description: |-
+  The agent requested a root or elevated interactive shell through sudo, doas, su, or
+  pkexec. Ordinary commands run with sudo and explicit shell scripts are excluded.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name == "sudo" &&
+      lists.range(command.argv.size()).exists(shell,
+        shell > 0 &&
+        command.argv[shell].matches("(?i)^(-i|-s|--login|--shell)$") &&
+        lists.range(shell).all(i,
+          i == 0 ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > 1 &&
+            command.argv[i - 1].matches("(?i)^(-C|-D|-g|-h|-p|-R|-r|-T|-t|-u|--chdir|--close-from|--group|--host|--prompt|--role|--type|--user|--other-user)$")
+          )
+        )
+      )
+    ) ||
+    (
+      command.name == "doas" &&
+      lists.range(command.argv.size()).exists(shell,
+        shell > 0 &&
+        command.argv[shell] == "-s" &&
+        lists.range(shell).all(i,
+          i == 0 ||
+          command.argv[i] in ["-L", "-n"] ||
+          (i > 1 && command.argv[i - 1] == "-u")
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(bash|sh|zsh|fish|ksh|dash|pwsh|powershell)(\\.exe)?$") &&
+      command.wrappers.exists(wrapper,
+        wrapper.name.matches("(?i)^(sudo|doas)$")
+      ) &&
+      command.argv.slice(1, command.argv.size()).all(arg,
+        arg.matches("(?i)^(-i|-l|--login|--noprofile|--norc)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^su$") &&
+      (
+        command.wrappers.exists(wrapper,
+          wrapper.name.matches("(?i)^sudo$")
+        ) ||
+        command.wrappers.size() == 0
+      ) &&
+      command.argv.slice(1, command.argv.size()).all(arg,
+        arg.matches("(?i)^(-|--login|root)$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^pkexec$") &&
+      command.argv.size() >= 2 &&
+      command.argv[1].matches("(?i)(^|[/\\\\])(bash|sh|zsh|fish|ksh|dash|pwsh|powershell)(\\.exe)?$") &&
+      command.argv.slice(2, command.argv.size()).all(arg,
+        arg.matches("(?i)^(-i|-l|--login|--noprofile|--norc)$")
+      )
+    )
+  )
+tags: [attack.t1548.003]

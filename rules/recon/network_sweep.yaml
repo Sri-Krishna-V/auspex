@@ -1,0 +1,63 @@
+id: recon.network_sweep
+version: "1.4"
+enabled: true
+title: Agent requested a multi-host network sweep
+description: |-
+  The agent requested a network scanner with an explicit scan or target-list option
+  against a multi-host CIDR, address range, generated range, or target list. Single-host
+  diagnostics and scanner help/version checks are excluded.
+severity: medium
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name.matches("(?i)^(nmap|masscan|zmap|rustscan|naabu)(\\.exe)?$") &&
+      !command.argv.exists(arg,
+        arg == "-h" ||
+        arg == "-V" ||
+        arg.matches("(?i)^--(help|version)$")
+      ) &&
+      (
+        (
+          (
+            command.argv.exists(arg,
+              arg.matches("(?i)^(-sn|-s[STUAV]|-Pn|-p\\S*|--ports?=\\S+|--top-ports=\\S+|--open|--rate=\\S+|--ping|--target-port=\\S+|-[Bb]\\S*|--batch-size=\\S+)$")
+            ) ||
+            lists.range(command.argv.size() - 1).exists(i,
+              command.argv[i].matches("(?i)^(--ports?|--top-ports|--rate|--target-port|--batch-size)$") &&
+              !command.argv[i + 1].startsWith("-")
+            )
+          ) &&
+          lists.range(command.argv.size()).exists(i,
+            i > 0 &&
+            command.argv[i].matches("^(([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[01])|[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}-[0-9]{1,3})$") &&
+            !command.argv[i - 1].matches("(?i)^(--exclude|--exclude-file|--source-ip|-S|--adapter-ip|--gateway)$")
+          )
+        ) ||
+        command.argv.exists(arg,
+          arg.matches("(?i)^(-iL|--input-file|--target-file|-list|--list)=.+$")
+        ) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-iL|--input-file|--target-file|-list|--list)$") &&
+          !command.argv[i + 1].startsWith("-")
+        ) ||
+        command.argv.exists(arg, arg.matches("(?i)^-iR=([2-9]|[1-9][0-9]+)$")) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^-iR$") &&
+          command.argv[i + 1].matches("^([2-9]|[1-9][0-9]+)$")
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^fping(\\.exe)?$") &&
+      !command.argv.exists(arg, arg.matches("(?i)^(-h|--help|-v|--version)$")) &&
+      (
+        command.argv.exists(arg, arg.matches("(?i)^(-g|--generate)=.+$")) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-g|--generate)$") &&
+          !command.argv[i + 1].startsWith("-")
+        )
+      )
+    )
+  )
+tags: [attack.t1046]

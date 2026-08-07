@@ -1,0 +1,48 @@
+id: privilege.host_namespace_entry
+version: "1.2"
+enabled: true
+title: Agent targeted host process namespaces
+description: |-
+  The agent requested nsenter against PID 1 or a PID-1 namespace, or chroot against
+  /proc/1/root. In a container these are direct host-boundary crossing primitives.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name.matches("(?i)^nsenter$") &&
+      lists.range(command.argv.size()).exists(i,
+        i > 0 &&
+        (
+          command.argv[i].matches("(?i)^(-t|--target)=1$") ||
+          (
+            command.argv[i].matches("(?i)^(-t|--target)$") &&
+            i + 1 < command.argv.size() &&
+            command.argv[i + 1] == "1"
+          ) ||
+          command.argv[i].matches("(?i)^--(mount|uts|ipc|net|pid|user|cgroup|time)=/proc/1/ns/(mnt|uts|ipc|net|pid|user|cgroup|time)$") ||
+          (
+            command.argv[i].matches("(?i)^--(mount|uts|ipc|net|pid|user|cgroup|time)$") &&
+            i + 1 < command.argv.size() &&
+            command.argv[i + 1].matches("(?i)^/proc/1/ns/(mnt|uts|ipc|net|pid|user|cgroup|time)$")
+          )
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^chroot$") &&
+      lists.range(command.argv.size()).exists(i,
+        i > 0 &&
+        command.argv[i].matches("^/proc/1/root/?$") &&
+        lists.range(i).all(j,
+          j == 0 ||
+          command.argv[j].startsWith("-") ||
+          (
+            j > 1 &&
+            command.argv[j - 1].matches("(?i)^(-u|--userspec|--groups|--skip-chdir)$")
+          )
+        )
+      )
+    )
+  )
+tags: [attack.t1611]

@@ -1,0 +1,83 @@
+id: privilege.container_runtime_socket_access
+version: "1.3"
+enabled: true
+title: Agent targeted a container runtime socket
+description: |-
+  The agent targeted a Docker, containerd, CRI-O, or Podman Unix socket through an API
+  client or runtime CLI. Runtime control can provide host-level execution even when the
+  agent itself is confined.
+severity: high
+expr: |-
+  (
+    event.event_type == "file.read" &&
+    event.file_path.matches("^/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+  ) || (
+    (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+    shell_commands.exists(command,
+      (
+        command.name.matches("(?i)^(curl|http|https|httpie|grpcurl)$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          (
+            command.argv[i].matches("(?i)^(--unix-socket|-unix)=(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$") ||
+            (
+              command.argv[i].matches("(?i)^(--unix-socket|-unix)$") &&
+              i + 1 < command.argv.size() &&
+              command.argv[i + 1].matches("(?i)^(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+            )
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^socat$") &&
+        command.argv.slice(1, command.argv.size()).exists(arg,
+          arg.matches("(?i)^UNIX(-CONNECT|-CLIENT)?:/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)(,.*)?$")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(nc|ncat)$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          (
+            command.argv[i].matches("(?i)^(--unixsock|-U)=(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$") ||
+            (
+              command.argv[i].matches("(?i)^(--unixsock|-U)$") &&
+              i + 1 < command.argv.size() &&
+              command.argv[i + 1].matches("(?i)^(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+            )
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(docker|ctr|nerdctl|crictl|podman)(\\.exe)?$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          (
+            command.argv[i].matches("(?i)^(-H|--host|-a|--address|-r|--runtime-endpoint|--image-endpoint|--url)=(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$") ||
+            (
+              command.argv[i].matches("(?i)^(-H|--host|-a|--address|-r|--runtime-endpoint|--image-endpoint|--url)$") &&
+              i + 1 < command.argv.size() &&
+              command.argv[i + 1].matches("(?i)^(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+            )
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^docker(\\.exe)?$") &&
+        (
+          command.wrappers.exists(wrapper,
+            wrapper.name.matches("(?i)^env$") &&
+            wrapper.argv.exists(arg,
+              arg.matches("(?i)^DOCKER_HOST=unix:(//)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+            )
+          ) ||
+          command.assignments.exists(assignment,
+            !assignment.append &&
+            assignment.name == "DOCKER_HOST" &&
+            assignment.value.matches("(?i)^unix:(//)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+          )
+        )
+      )
+    )
+  )
+tags: [attack.t1611, attack.t1552.007]

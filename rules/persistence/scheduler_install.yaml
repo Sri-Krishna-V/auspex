@@ -1,0 +1,124 @@
+id: persistence.scheduler_install
+version: "1.7"
+enabled: true
+title: Scheduled or background task creation requested or observed
+description: |-
+  A command requested a scheduled/background job, or a structured or command-derived
+  write targeted a standard scheduler directory. Successful background execution may
+  outlive the agent session.
+severity: high
+expr: |-
+  (
+    (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+    shell_commands.exists(command,
+      (
+        command.name.matches("(?i)^crontab$") &&
+        (
+          command.argv.exists(arg, arg == "-e") ||
+          (command.argv.size() == 2 && !command.argv[1].startsWith("-")) ||
+          (
+            command.argv.size() >= 4 &&
+            command.argv[1].matches("(?i)^(-u|--user)$") &&
+            (command.argv[3] == "-" || !command.argv[3].startsWith("-"))
+          ) ||
+          (
+            command.redirects.exists(redirect, redirect.op == "read") &&
+            (command.argv.size() == 1 || command.argv[command.argv.size() - 1] == "-")
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^launchctl$") &&
+        command.argv.size() >= 3 &&
+        (
+          command.argv[1].matches("(?i)^load$") ||
+          command.argv[1].matches("(?i)^bootstrap$")
+        ) &&
+        command.argv[command.argv.size() - 1].matches("(?i)\\.(plist)$")
+      ) ||
+      (
+        command.name.matches("(?i)^systemctl$") &&
+        !command.argv.exists(arg, arg.matches("(?i)^--(help|dry-run)$")) &&
+        lists.range(command.argv.size()).exists(i,
+          command.argv[i].matches("(?i)^enable$") &&
+          i + 1 < command.argv.size() &&
+          command.argv.slice(i + 1, command.argv.size()).exists(arg, !arg.startsWith("-"))
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^schtasks(\\.exe)?$") &&
+        command.argv.exists(arg, arg.matches("(?i)^/create$")) &&
+        !command.argv.exists(arg, arg == "/?") &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^/(tn|tr)$") &&
+          !command.argv[i + 1].startsWith("/")
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^register-scheduledtask$") &&
+        (
+          command.argv.slice(1, command.argv.size()).exists(arg,
+            arg.matches("(?i)^-(taskname|inputobject)(:|=).+$")
+          ) ||
+          lists.range(command.argv.size() - 1).exists(i,
+            i > 0 &&
+            command.argv[i].matches("(?i)^-(taskname|inputobject)$") &&
+            !command.argv[i + 1].startsWith("-")
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^reg(\\.exe)?$") &&
+        command.argv.size() > 2 &&
+        command.argv[1].matches("(?i)^add$") &&
+        command.argv[2].matches("(?i)(^|[\\\\/])CurrentVersion[\\\\/]Run(Once)?$")
+      ) ||
+      command.redirects.exists(redirect,
+        redirect.op in ["write", "append"] &&
+        redirect.target.matches("(?i)^(/etc/crontab|/etc/cron(\\.d|\\.daily|\\.hourly|\\.weekly|\\.monthly)[\\\\/][^\\\\/]+|/etc/systemd/system[\\\\/][^\\\\/]+\\.(service|timer)|/Library/Launch(Agents|Daemons)[\\\\/][^\\\\/]+\\.plist|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(~|\\$HOME|\\$\\{HOME\\})[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(\\$env:APPDATA|%APPDATA%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]AppData[\\\\/]Roaming)[\\\\/]Microsoft[\\\\/]Windows[\\\\/]Start Menu[\\\\/]Programs[\\\\/]Startup[\\\\/][^\\\\/]+)$")
+      ) ||
+      (
+        command.name.matches("(?i)^(tee|truncate|sed)$") &&
+        command.argv.exists(arg,
+          arg.matches("(?i)^(/etc/crontab|/etc/cron(\\.d|\\.daily|\\.hourly|\\.weekly|\\.monthly)[\\\\/][^\\\\/]+|/etc/systemd/system[\\\\/][^\\\\/]+\\.(service|timer)|/Library/Launch(Agents|Daemons)[\\\\/][^\\\\/]+\\.plist|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(~|\\$HOME|\\$\\{HOME\\})[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(\\$env:APPDATA|%APPDATA%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]AppData[\\\\/]Roaming)[\\\\/]Microsoft[\\\\/]Windows[\\\\/]Start Menu[\\\\/]Programs[\\\\/]Startup[\\\\/][^\\\\/]+)$")
+        ) &&
+        (
+          !command.name.matches("(?i)^sed$") ||
+          command.argv.exists(arg, arg.matches("(?i)^(-i|--in-place)(=.*)?$"))
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(set-content|add-content|clear-content|out-file)$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^(/etc/crontab|/etc/cron(\\.d|\\.daily|\\.hourly|\\.weekly|\\.monthly)[\\\\/][^\\\\/]+|/etc/systemd/system[\\\\/][^\\\\/]+\\.(service|timer)|/Library/Launch(Agents|Daemons)[\\\\/][^\\\\/]+\\.plist|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(~|\\$HOME|\\$\\{HOME\\})[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(\\$env:APPDATA|%APPDATA%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]AppData[\\\\/]Roaming)[\\\\/]Microsoft[\\\\/]Windows[\\\\/]Start Menu[\\\\/]Programs[\\\\/]Startup[\\\\/][^\\\\/]+)$") &&
+          (
+            i == 1 ||
+            command.argv[i - 1].matches("(?i)^-(path|literalpath|filepath)$") ||
+            lists.range(i).all(j,
+              j == 0 ||
+              command.argv[j].matches("(?i)^-(force|nonewline|passthru|append|noclobber|whatif|confirm)(:.*)?$")
+            )
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(cp|mv|install|copy-item|move-item)$") &&
+        command.argv.size() > 2 &&
+        (
+          command.argv[command.argv.size() - 1].matches("(?i)^(/etc/crontab|/etc/cron(\\.d|\\.daily|\\.hourly|\\.weekly|\\.monthly)[\\\\/][^\\\\/]+|/etc/systemd/system[\\\\/][^\\\\/]+\\.(service|timer)|/Library/Launch(Agents|Daemons)[\\\\/][^\\\\/]+\\.plist|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(~|\\$HOME|\\$\\{HOME\\})[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(\\$env:APPDATA|%APPDATA%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]AppData[\\\\/]Roaming)[\\\\/]Microsoft[\\\\/]Windows[\\\\/]Start Menu[\\\\/]Programs[\\\\/]Startup[\\\\/][^\\\\/]+)$") ||
+          lists.range(command.argv.size() - 1).exists(i,
+            command.argv[i].matches("(?i)^-destination$") &&
+            command.argv[i + 1].matches("(?i)^(/etc/crontab|/etc/cron(\\.d|\\.daily|\\.hourly|\\.weekly|\\.monthly)[\\\\/][^\\\\/]+|/etc/systemd/system[\\\\/][^\\\\/]+\\.(service|timer)|/Library/Launch(Agents|Daemons)[\\\\/][^\\\\/]+\\.plist|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(~|\\$HOME|\\$\\{HOME\\})[\\\\/](Library[\\\\/]LaunchAgents[\\\\/][^\\\\/]+\\.plist|\\.config[\\\\/]systemd[\\\\/]user[\\\\/][^\\\\/]+\\.(service|timer)|\\.config[\\\\/]autostart[\\\\/][^\\\\/]+\\.desktop)|(\\$env:APPDATA|%APPDATA%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]AppData[\\\\/]Roaming)[\\\\/]Microsoft[\\\\/]Windows[\\\\/]Start Menu[\\\\/]Programs[\\\\/]Startup[\\\\/][^\\\\/]+)$")
+          )
+        )
+      )
+    )
+  ) || (
+    event.event_type == "file.write" &&
+    (
+      event.file_path.matches("^(/etc/crontab|/etc/cron(\\.d|\\.daily|\\.hourly|\\.weekly|\\.monthly)/[^/]+|/etc/systemd/system/[^/]+\\.(service|timer)|/Library/Launch(Agents|Daemons)/[^/]+\\.plist|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)/(Library/LaunchAgents/[^/]+\\.plist|\\.config/systemd/user/[^/]+\\.(service|timer)|\\.config/autostart/[^/]+\\.desktop))$") ||
+      event.file_path.matches("(?i)^([A-Z]:/Windows/System32/Tasks/[^/]+|[A-Z]:/Users/[^/]+/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/[^/]+)$")
+    )
+  )
+tags: [attack.t1053, attack.t1543]

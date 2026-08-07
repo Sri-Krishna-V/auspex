@@ -1,0 +1,100 @@
+id: persistence.privileged_account_change
+version: "1.3"
+enabled: true
+title: Agent requested a privileged account change
+description: |-
+  The agent requested UID 0 or membership in a privileged local, domain, container-control,
+  or remote-login group. Ordinary account creation, group inspection, and unrelated
+  memberships are excluded; success is not implied.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name.matches("(?i)^(useradd|usermod|adduser)$") &&
+      (
+        command.argv.exists(arg, arg.matches("(?i)^--uid=0$")) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-u|--uid)$") &&
+          command.argv[i + 1] == "0"
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^usermod$") &&
+      (
+        command.argv.exists(arg,
+          arg.matches("(?i)^--groups=(?:[^,]+,)*(root|sudo|wheel|admin|docker|lxd|incus|podman)(?:,|$)")
+        ) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-aG|-G|--groups)$") &&
+          command.argv[i + 1].matches("(?i)^(?:[^,]+,)*(root|sudo|wheel|admin|docker|lxd|incus|podman)(?:,|$)")
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^gpasswd$") &&
+      command.argv.size() >= 4 &&
+      command.argv[1].matches("(?i)^(-a|--add)$") &&
+      command.argv[command.argv.size() - 1].matches("(?i)^(root|sudo|wheel|admin|docker|lxd|incus|podman)$")
+    ) ||
+    (
+      command.name.matches("(?i)^adduser$") &&
+      command.argv.size() == 3 &&
+      command.argv[2].matches("(?i)^(root|sudo|wheel|admin|docker|lxd|incus|podman)$")
+    ) ||
+    (
+      command.name.matches("(?i)^groupmems$") &&
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^(-g|--group)$") &&
+        command.argv[i + 1].matches("(?i)^(root|sudo|wheel|admin|docker|lxd|incus|podman)$")
+      ) &&
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^(-a|--add)$") &&
+        !command.argv[i + 1].startsWith("-")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^dseditgroup$") &&
+      command.argv.exists(arg, arg.matches("(?i)^(-a|--add)$")) &&
+      command.argv[command.argv.size() - 1].matches("(?i)^(root|wheel|admin)$")
+    ) ||
+    (
+      command.name.matches("(?i)^dscl$") &&
+      command.argv.size() >= 6 &&
+      command.argv[1] == "." &&
+      command.argv[2].matches("(?i)^-append$") &&
+      command.argv[3].matches("(?i)^/Groups/(root|wheel|admin)$") &&
+      command.argv[4].matches("(?i)^GroupMembership$")
+    ) ||
+    (
+      command.name.matches("(?i)^(net|net1)(\\.exe)?$") &&
+      command.argv.size() >= 5 &&
+      command.argv[1].matches("(?i)^localgroup$") &&
+      command.argv[2].matches("(?i)^(Administrators|Remote Desktop Users)$") &&
+      command.argv[command.argv.size() - 1].matches("(?i)^/add$")
+    ) ||
+    (
+      command.name.matches("(?i)^add-localgroupmember$") &&
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^-(group|name)$") &&
+        command.argv[i + 1].matches("(?i)^(Administrators|Remote Desktop Users)$")
+      ) &&
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^-member$") &&
+        !command.argv[i + 1].startsWith("-")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^add-adgroupmember$") &&
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^-identity$") &&
+        command.argv[i + 1].matches("(?i)^(Domain Admins|Enterprise Admins|Administrators)$")
+      ) &&
+      lists.range(command.argv.size() - 1).exists(i,
+        command.argv[i].matches("(?i)^-members?$") &&
+        !command.argv[i + 1].startsWith("-")
+      )
+    )
+  )
+tags: [attack.t1098, attack.t1136]

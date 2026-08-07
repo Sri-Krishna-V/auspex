@@ -1,0 +1,88 @@
+id: impact.cryptomining_launch
+version: "1.4"
+enabled: true
+title: Agent requested cryptocurrency mining software
+description: |-
+  The agent requested execution of a known cryptocurrency miner binary, selected one as a
+  container entrypoint, or launched an image whose basename exactly matches one. Package
+  installation, source inspection, process cleanup, generic CPU stress tools, and incidental
+  miner names in unrelated container options or commands are excluded.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.name.matches("(?i)^(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$") ||
+    (
+      command.name.matches("(?i)^nice$") &&
+      (
+        (command.argv.size() > 1 &&
+         command.argv[1].matches("(?i)(^|[/\\\\])(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$")) ||
+        (command.argv.size() > 3 &&
+         command.argv[1] == "-n" &&
+         command.argv[2].matches("^-?[0-9]+$") &&
+         command.argv[3].matches("(?i)(^|[/\\\\])(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$"))
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^setsid$") &&
+      command.argv.size() > 1 &&
+      command.argv[1].matches("(?i)(^|[/\\\\])(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$")
+    ) ||
+    (
+      command.name.matches("(?i)^taskset$") &&
+      lists.range(command.argv.size()).exists(i,
+        i > 1 &&
+        command.argv[i - 1].matches("^[0-9,\\-]+$") &&
+        command.argv[i].matches("(?i)(^|[/\\\\])(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$")
+      )
+    ) ||
+    (
+      command.name in ["docker", "podman"] &&
+      lists.range(command.argv.size()).exists(run,
+        run > 0 &&
+        command.argv[run] == "run" &&
+        lists.range(run).all(j,
+          j == 0 ||
+          command.argv[j].matches("(?i)^(--debug|--tls|--tlsverify|--(config|context|host|log-level)=.+|-H.+)$") ||
+          command.argv[j].matches("(?i)^(--config|--context|--host|--log-level|-H)$") ||
+          (j > 1 && command.argv[j - 1].matches("(?i)^(--config|--context|--host|--log-level|-H)$"))
+        ) &&
+        (
+          lists.range(command.argv.size()).exists(i,
+            i > run &&
+            command.argv[i].matches("(?i)^--entrypoint=(?:.*[/\\\\])?(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$") &&
+            lists.range(i).all(j,
+              j <= run ||
+              command.argv[j].startsWith("-") ||
+              (j > run + 1 &&
+               command.argv[j - 1].matches("(?i)^(--name|--network|--user|--workdir|--entrypoint|--env|--env-file|--volume|--mount|--publish|--expose|--cpus|--memory|--restart|--gpus|--device|--pull|--platform|--runtime|--hostname|--label|--log-driver|--security-opt|--cap-add|--cap-drop|--add-host|--dns|--dns-option|--dns-search|--ipc|--pid|--uts|--shm-size|--ulimit|--tmpfs|--group-add|--sysctl|--stop-signal|--stop-timeout|--health-cmd|--health-interval|--health-timeout|--health-retries|--annotation|-[evpuwh])$"))
+            )
+          ) ||
+          lists.range(command.argv.size() - 1).exists(i,
+            i > run &&
+            command.argv[i] == "--entrypoint" &&
+            command.argv[i + 1].matches("(?i)^(?:.*[/\\\\])?(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)$") &&
+            lists.range(i).all(j,
+              j <= run ||
+              command.argv[j].startsWith("-") ||
+              (j > run + 1 &&
+               command.argv[j - 1].matches("(?i)^(--name|--network|--user|--workdir|--entrypoint|--env|--env-file|--volume|--mount|--publish|--expose|--cpus|--memory|--restart|--gpus|--device|--pull|--platform|--runtime|--hostname|--label|--log-driver|--security-opt|--cap-add|--cap-drop|--add-host|--dns|--dns-option|--dns-search|--ipc|--pid|--uts|--shm-size|--ulimit|--tmpfs|--group-add|--sysctl|--stop-signal|--stop-timeout|--health-cmd|--health-interval|--health-timeout|--health-retries|--annotation|-[evpuwh])$"))
+            )
+          ) ||
+          lists.range(command.argv.size()).exists(i,
+            i > run &&
+            command.argv[i].matches("(?i)^([a-z0-9._-]+(:[0-9]+)?/)*(xmrig(-proxy)?|minerd|cpuminer(-multi)?|ethminer|cgminer|bfgminer|t-rex|lolminer|nbminer|teamredminer|phoenixminer|nanominer)(:[a-z0-9._-]+)?(@sha256:[a-f0-9]{64})?$") &&
+            !(i > run + 1 &&
+              command.argv[i - 1].matches("(?i)^(--name|--network|--user|--workdir|--entrypoint|--env|--env-file|--volume|--mount|--publish|--expose|--cpus|--memory|--restart|--gpus|--device|--pull|--platform|--runtime|--hostname|--label|--log-driver|--security-opt|--cap-add|--cap-drop|--add-host|--dns|--dns-option|--dns-search|--ipc|--pid|--uts|--shm-size|--ulimit|--tmpfs|--group-add|--sysctl|--stop-signal|--stop-timeout|--health-cmd|--health-interval|--health-timeout|--health-retries|--annotation|-[evpuwh])$")) &&
+            lists.range(i).all(j,
+              j <= run ||
+              command.argv[j].startsWith("-") ||
+              (j > run + 1 &&
+               command.argv[j - 1].matches("(?i)^(--name|--network|--user|--workdir|--entrypoint|--env|--env-file|--volume|--mount|--publish|--expose|--cpus|--memory|--restart|--gpus|--device|--pull|--platform|--runtime|--hostname|--label|--log-driver|--security-opt|--cap-add|--cap-drop|--add-host|--dns|--dns-option|--dns-search|--ipc|--pid|--uts|--shm-size|--ulimit|--tmpfs|--group-add|--sysctl|--stop-signal|--stop-timeout|--health-cmd|--health-interval|--health-timeout|--health-retries|--annotation|-[evpuwh])$"))
+            )
+          )
+        )
+      )
+    )
+  )
+tags: [attack.t1496]

@@ -1,0 +1,42 @@
+id: exec.reverse_shell
+version: "1.3"
+enabled: true
+title: Network shell control requested
+description: |-
+  A command requested an interactive shell over a /dev/tcp or /dev/udp redirect, a
+  netcat/ncat shell-exec option, or a socat EXEC-to-TCP connection. This includes
+  connect-back and bind-shell forms; generic listeners and non-shell exec targets are
+  excluded.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name.matches("(?i)^(bash|zsh|ksh)$") &&
+      command.argv.exists(arg, arg == "-i") &&
+      command.redirects.exists(redirect,
+        redirect.target.matches("^/dev/(tcp|udp)/[^/\\s]+/[0-9]{1,5}$") &&
+        redirect.op in ["write", "read_write", "duplicate"]
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(nc|ncat|netcat)$") &&
+      (
+        command.argv.exists(arg,
+          arg.matches("(?i)^--exec=(?:.*[/\\\\])?(sh|bash|zsh|dash|ksh|cmd(\\.exe)?|powershell(\\.exe)?|pwsh(\\.exe)?)$")
+        ) ||
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^(-e|--exec)$") &&
+          command.argv[i + 1].matches("(?i)^(?:.*[/\\\\])?(sh|bash|zsh|dash|ksh|cmd(\\.exe)?|powershell(\\.exe)?|pwsh(\\.exe)?)$")
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^socat$") &&
+      command.argv.exists(arg,
+        arg.matches("(?i)^EXEC:(?:.*[/\\\\])?(sh|bash|zsh|dash|ksh|cmd(\\.exe)?|powershell(\\.exe)?|pwsh(\\.exe)?)(,.*)?$")
+      ) &&
+      command.argv.exists(arg, arg.matches("(?i)^(TCP|TCP4|TCP6|TCP-CONNECT):.+$"))
+    )
+  )
+tags: [remote_code_exec]

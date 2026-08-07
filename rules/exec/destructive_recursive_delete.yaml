@@ -1,0 +1,70 @@
+id: exec.destructive_recursive_delete
+version: "1.5"
+enabled: true
+title: Recursive deletion of root or home requested
+description: |-
+  A command requested recursive deletion of the filesystem root or the user's home directory.
+  This is destructive endpoint activity, not ordinary repository cleanup.
+severity: critical
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name.matches("(?i)^rm$") &&
+      command.argv.exists(arg, arg.matches("(?i)^(--recursive|-[dfiIRrvW]*[rR][dfiIRrvW]*)$")) &&
+      (
+        command.argv.exists(arg, arg.matches("(?i)^(--force|-[dfiIRrvW]*f[dfiIRrvW]*)$")) ||
+        (
+          command.argv.exists(arg, arg.matches("(?i)^-(recurse|r)$")) &&
+          command.argv.exists(arg,
+            arg.matches("(?i)^(~([\\\\/](\\*)?)?|\\$HOME([\\\\/](\\*)?)?|\\$\\{HOME\\}([\\\\/](\\*)?)?|[A-Z]:[\\\\/](\\*)?|\\$env:(USERPROFILE|HOME)([\\\\/](\\*)?)?|%USERPROFILE%([\\\\/](\\*)?)?)$")
+          )
+        )
+      ) &&
+      command.arguments.exists(arg,
+        arg.value.matches("(?i)^(/|/\\*|~|~/|\\$HOME|\\$HOME/|\\$\\{HOME\\}|\\$\\{HOME\\}/|[A-Z]:[\\\\/](\\*)?|\\$env:(USERPROFILE|HOME)([\\\\/]\\*)?|%USERPROFILE%([\\\\/]\\*)?)$") &&
+        (
+          !arg.value.matches("(?i)^(~|\\$|%)") ||
+          arg.expands
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(remove-item|ri)$") &&
+      (
+        command.argv.exists(arg, arg.matches("(?i)^-(recurse|r)$")) ||
+        command.argv.exists(arg, arg.matches("(?i)^[A-Z]:[\\\\/]\\s+-(recurse|r)(\\s|$)"))
+      ) &&
+      lists.range(command.arguments.size()).exists(i,
+        i > 0 &&
+        command.arguments[i].value.matches("(?i)^([A-Z]:[\\\\/](\\*)?(\\s+-\\S+)*|\\$env:(USERPROFILE|HOME)([\\\\/]\\*)?|%USERPROFILE%([\\\\/]\\*)?|\\$HOME([\\\\/]\\*)?|~([\\\\/]\\*)?)$") &&
+        (
+          !command.arguments[i].value.matches("(?i)^(~|\\$|%)") ||
+          command.arguments[i].expands
+        ) &&
+        (
+          i == 1 ||
+          command.argv[i - 1].matches("(?i)^-(path|literalpath)$") ||
+          lists.range(i).all(j,
+            j == 0 ||
+            command.argv[j].matches("(?i)^-(recurse|r|force|confirm|verbose|debug|whatif)(:.*)?$")
+          )
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(rmdir|rd)$") &&
+      (
+        command.argv.exists(arg, arg.matches("(?i)^/s$")) ||
+        command.argv.exists(arg, arg.matches("(?i)^[A-Z]:[\\\\/]\\s+/s(\\s|$)"))
+      ) &&
+      command.arguments.exists(arg,
+        arg.value.matches("(?i)^([A-Z]:[\\\\/](\\*)?(\\s+/\\S+)*|%USERPROFILE%([\\\\/]\\*)?)$") &&
+        (
+          !arg.value.matches("(?i)^%") ||
+          arg.expands
+        )
+      )
+    )
+  )
+tags: [destructive_action]

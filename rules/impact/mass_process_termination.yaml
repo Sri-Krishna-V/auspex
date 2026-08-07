@@ -1,0 +1,61 @@
+id: impact.mass_process_termination
+version: "1.4"
+enabled: true
+title: Agent requested termination of all accessible processes
+description: |-
+  The agent issued an exact force-kill form that targets every process it can signal.
+  This can terminate the agent, sibling workloads, monitoring, and critical services in
+  one action.
+severity: critical
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  (
+    shell_commands.exists(command,
+      (
+        command.name.matches("(?i)^kill$") &&
+        command.argv.exists(arg, arg == "-1") &&
+        (
+          command.argv.exists(arg, arg.matches("(?i)^(-9|-KILL|-SIGKILL)$")) ||
+          lists.range(command.argv.size() - 1).exists(i,
+            command.argv[i].matches("(?i)^(-s|--signal)$") &&
+            command.argv[i + 1].matches("(?i)^(9|KILL|SIGKILL)$")
+          ) ||
+          command.argv.exists(arg, arg.matches("(?i)^--signal=(9|KILL|SIGKILL)$"))
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^stop-process$") &&
+        command.argv.exists(arg, arg.matches("(?i)^-force$")) &&
+        (
+          command.argv.exists(arg, arg.matches("(?i)^-(name|processname)=\\*$")) ||
+          lists.range(command.argv.size() - 1).exists(i,
+            command.argv[i].matches("(?i)^-(name|processname)$") &&
+            command.argv[i + 1] == "*"
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^taskkill(\\.exe)?$") &&
+        command.argv.exists(arg, arg.matches("(?i)^/f$")) &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^/fi$") &&
+          command.argv[i + 1].matches("(?i)^PID\\s+ge\\s+[01]$")
+        ) &&
+        lists.range(command.argv.size() - 1).exists(i,
+          command.argv[i].matches("(?i)^/im$") &&
+          command.argv[i + 1] == "*"
+        )
+      )
+    ) ||
+    shell_commands.exists(source,
+      source.name == "get-process" &&
+      source.pipeline_id > 0 &&
+      shell_commands.exists(sink,
+        sink.statement_id != source.statement_id &&
+        sink.pipeline_id == source.pipeline_id &&
+        sink.name == "stop-process" &&
+        sink.argv.exists(arg, arg.matches("(?i)^-force$"))
+      )
+    )
+  )
+tags: [attack.t1489]

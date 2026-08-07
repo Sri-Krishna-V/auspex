@@ -1,0 +1,21 @@
+id: exfil.dns_tunnel_exec
+version: "1.4"
+enabled: true
+title: Command output embedded in a DNS query
+description: |-
+  A DNS resolver tool (dig/nslookup/host/drill) was run with a query name built from a
+  command substitution. The executed command's output becomes a subdomain label visible
+  to the queried domain's authoritative DNS server. Ordinary variable-based hostnames are
+  excluded because they are common in deployment and diagnostics scripts.
+severity: medium
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.name in ["dig", "nslookup", "host", "drill"] &&
+    command.arguments.slice(1, command.arguments.size()).exists(arg,
+      !arg.value.startsWith("@") &&
+      arg.subcommands.size() > 0 &&
+      arg.value.matches("(^|[A-Za-z0-9_-])(\\$\\([^;&|)]*\\)|`[^;&|`]*`)[A-Za-z0-9_-]*\\.[A-Za-z0-9_-]")
+    )
+  )
+tags: [dns_data_egress]

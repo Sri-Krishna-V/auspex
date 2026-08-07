@@ -1,0 +1,190 @@
+id: chain.privilege_discovery_then_elevation
+version: "1.3"
+enabled: true
+title: Privilege discovery followed by an elevation-capable action
+description: |-
+  Within one session, the agent enumerated sudo, setid, or file-capability escalation
+  paths and then requested a root shell, targeted PID-1 namespaces, or addressed a
+  container runtime socket.
+severity: high
+sequence:
+  within_events: 32
+  steps:
+    - expr: |-
+        (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+        shell_commands.exists(command,
+          (
+            command.name.matches("(?i)^sudo$") &&
+            !command.argv.exists(arg,
+              arg == "-V" ||
+              arg.matches("(?i)^--(help|version)$")
+            ) &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              command.argv[i].matches("(?i)^(-l|-ll|--list)$") &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(-C|-D|-g|-h|-p|-R|-r|-t|-T|-U|-u|--close-from|--chdir|--group|--host|--prompt|--chroot|--role|--type|--other-user|--user)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^find$") &&
+            lists.range(command.argv.size() - 1).exists(i,
+              i > 1 &&
+              command.argv[i].matches("(?i)^-perm$") &&
+              command.argv[i + 1].matches("(?i)^[/-]?([246]000|[ugo]*[+=]s)$") &&
+              command.argv.slice(1, i).exists(arg, arg in ["/", "/usr", "/bin", "/sbin", "/opt"])
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^getcap$") &&
+            command.argv.exists(arg, arg.matches("(?i)^(-r|--recursive)$")) &&
+            command.argv.slice(1, command.argv.size()).exists(arg, arg in ["/", "/usr", "/bin", "/sbin", "/opt"])
+          )
+        )
+    - expr: |-
+        (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+        shell_commands.exists(command,
+          (
+            command.name.matches("(?i)^sudo$") &&
+            command.argv.exists(arg, arg.matches("(?i)^(-i|-s|--login|--shell)$"))
+          ) ||
+          (
+            command.name.matches("(?i)^doas$") &&
+            command.argv.exists(arg, arg == "-s")
+          ) ||
+          (
+            command.name.matches("(?i)^(bash|sh|zsh|fish|ksh|dash|pwsh|powershell)(\\.exe)?$") &&
+            command.wrappers.exists(wrapper,
+              wrapper.name.matches("(?i)^(sudo|doas)$")
+            ) &&
+            command.argv.slice(1, command.argv.size()).all(arg,
+              arg.matches("(?i)^(-i|-l|--login|--noprofile|--norc)$")
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^su$") &&
+            (
+              command.wrappers.exists(wrapper,
+                wrapper.name.matches("(?i)^sudo$")
+              ) ||
+              command.wrappers.size() == 0
+            ) &&
+            command.argv.slice(1, command.argv.size()).all(arg,
+              arg.matches("(?i)^(-|--login|root)$")
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^pkexec$") &&
+            command.argv.size() >= 2 &&
+            command.argv[1].matches("(?i)(^|[/\\\\])(bash|sh|zsh|fish|ksh|dash|pwsh|powershell)(\\.exe)?$") &&
+            command.argv.slice(2, command.argv.size()).all(arg,
+              arg.matches("(?i)^(-i|-l|--login|--noprofile|--norc)$")
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^nsenter$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              (
+                command.argv[i].matches("(?i)^(-t|--target)=1$") ||
+                (
+                  command.argv[i].matches("(?i)^(-t|--target)$") &&
+                  i + 1 < command.argv.size() &&
+                  command.argv[i + 1] == "1"
+                ) ||
+                command.argv[i].matches("(?i)^--(mount|uts|ipc|net|pid|user|cgroup|time)=/proc/1/ns/(mnt|uts|ipc|net|pid|user|cgroup|time)$") ||
+                (
+                  command.argv[i].matches("(?i)^--(mount|uts|ipc|net|pid|user|cgroup|time)$") &&
+                  i + 1 < command.argv.size() &&
+                  command.argv[i + 1].matches("(?i)^/proc/1/ns/(mnt|uts|ipc|net|pid|user|cgroup|time)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^chroot$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              command.argv[i].matches("^/proc/1/root/?$") &&
+              lists.range(i).all(j,
+                j == 0 ||
+                command.argv[j].startsWith("-") ||
+                (
+                  j > 1 &&
+                  command.argv[j - 1].matches("(?i)^(-u|--userspec|--groups|--skip-chdir)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^(curl|http|https|httpie|grpcurl)$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              (
+                command.argv[i].matches("(?i)^(--unix-socket|-unix)=(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$") ||
+                (
+                  command.argv[i].matches("(?i)^(--unix-socket|-unix)$") &&
+                  i + 1 < command.argv.size() &&
+                  command.argv[i + 1].matches("(?i)^(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^socat$") &&
+            command.argv.slice(1, command.argv.size()).exists(arg,
+              arg.matches("(?i)^UNIX(-CONNECT|-CLIENT)?:/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)(,.*)?$")
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^(nc|ncat)$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              (
+                command.argv[i].matches("(?i)^(--unixsock|-U)=(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$") ||
+                (
+                  command.argv[i].matches("(?i)^(--unixsock|-U)$") &&
+                  i + 1 < command.argv.size() &&
+                  command.argv[i + 1].matches("(?i)^(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^(docker|ctr|nerdctl|crictl|podman)(\\.exe)?$") &&
+            lists.range(command.argv.size()).exists(i,
+              i > 0 &&
+              (
+                command.argv[i].matches("(?i)^(-H|--host|-a|--address|-r|--runtime-endpoint|--image-endpoint|--url)=(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$") ||
+                (
+                  command.argv[i].matches("(?i)^(-H|--host|-a|--address|-r|--runtime-endpoint|--image-endpoint|--url)$") &&
+                  i + 1 < command.argv.size() &&
+                  command.argv[i + 1].matches("(?i)^(unix:(//)?)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+                )
+              )
+            )
+          ) ||
+          (
+            command.name.matches("(?i)^docker(\\.exe)?$") &&
+            (
+              command.wrappers.exists(wrapper,
+                wrapper.name.matches("(?i)^env$") &&
+                wrapper.argv.exists(arg,
+                  arg.matches("(?i)^DOCKER_HOST=unix:(//)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+                )
+              ) ||
+              command.assignments.exists(assignment,
+                !assignment.append &&
+                assignment.name == "DOCKER_HOST" &&
+                assignment.value.matches("(?i)^unix:(//)?/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock|user/[0-9]+/podman/podman\\.sock)$")
+              )
+            )
+          )
+        )
+tags: [attack.t1548, attack.t1611]

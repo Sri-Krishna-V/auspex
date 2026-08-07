@@ -1,0 +1,108 @@
+id: privilege.container_host_escape
+version: "1.3"
+enabled: true
+title: Agent requested a container with host-escape privileges
+description: |-
+  The agent requested Docker or Podman with a host-escape primitive such as
+  --privileged, a host namespace, a dangerous kernel capability, a host-root bind, or a
+  container-runtime socket bind.
+severity: high
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.name.matches("(?i)^(docker|podman)(-compose)?(\\.exe)?$") &&
+    [
+      (
+        lists.range(command.argv.size()).filter(subcommand,
+          subcommand > 0 &&
+          command.argv[subcommand].matches("(?i)^(run|exec)$") &&
+          !(
+            subcommand > 1 &&
+            command.argv[subcommand - 1].matches("(?i)^(--config|--context|-H|--host|-l|--log-level)$")
+          )
+        ) + [-1]
+      )[0]
+    ].exists(subcommand,
+      subcommand > 0 &&
+      (
+        subcommand == 1 ||
+        (
+          subcommand == 2 &&
+          command.argv[1].matches("(?i)^(container|compose)$")
+        ) ||
+        lists.range(subcommand).all(i,
+          i == 0 ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > 1 &&
+            command.argv[i - 1].matches("(?i)^(--config|--context|-H|--host|-l|--log-level)$")
+          )
+        )
+      ) &&
+      [
+        (
+          lists.range(command.argv.size()).filter(option,
+            option > subcommand &&
+            !(
+              option > subcommand + 1 &&
+              command.argv[option - 1].matches(
+                "(?i)^(-a|--attach|--add-host|--annotation|--blkio-weight-device|--cap-drop|--cgroup-parent|--cidfile|--cpu-period|--cpu-quota|--cpu-rt-period|--cpu-rt-runtime|-c|--cpu-shares|--cpus|--cpuset-cpus|--cpuset-mems|--device|--device-cgroup-rule|--device-read-bps|--device-read-iops|--device-write-bps|--device-write-iops|--dns|--dns-option|--dns-search|--domainname|--entrypoint|-e|--env|--env-file|--expose|--gpus|--group-add|--health-cmd|--health-interval|--health-retries|--health-start-interval|--health-start-period|--health-timeout|-h|--hostname|--init-path|--ip|--ip6|--ipc|--isolation|-l|--label|--label-file|--link|--link-local-ip|--log-driver|--log-opt|--mac-address|-m|--memory|--memory-reservation|--memory-swap|--memory-swappiness|--mount|--name|--network|--network-alias|--oom-score-adj|-p|--publish|--pid|--platform|--pull|--restart|--runtime|--security-opt|--shm-size|--stop-signal|--stop-timeout|--storage-opt|--sysctl|--tmpfs|--ulimit|-u|--user|--userns|--uts|-v|--volume|--volume-driver|--volumes-from|-w|--workdir)$"
+              )
+            ) &&
+            (
+              command.argv[option].matches("(?i)^--privileged(=true)?$") ||
+              command.argv[option].matches("(?i)^--(pid|net|network|ipc|uts)=host$") ||
+              (
+                command.argv[option].matches("(?i)^--(pid|net|network|ipc|uts)$") &&
+                option + 1 < command.argv.size() &&
+                command.argv[option + 1].matches("(?i)^host$")
+              ) ||
+              command.argv[option].matches("(?i)^--cap-add=((cap_)?(sys_admin|sys_module|sys_rawio|sys_ptrace|bpf|perfmon|dac_read_search|dac_override)|all)$") ||
+              (
+                command.argv[option].matches("(?i)^--cap-add$") &&
+                option + 1 < command.argv.size() &&
+                command.argv[option + 1].matches("(?i)^((cap_)?(sys_admin|sys_module|sys_rawio|sys_ptrace|bpf|perfmon|dac_read_search|dac_override)|all)$")
+              ) ||
+              command.argv[option].matches("(?i)^(-v=?|--volume=)/:[^:]+$") ||
+              command.argv[option].matches("(?i)^(-v=?|--volume=)/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock):") ||
+              (
+                command.argv[option].matches("(?i)^(-v|--volume)$") &&
+                option + 1 < command.argv.size() &&
+                (
+                  command.argv[option + 1].matches("^/:[^:]+$") ||
+                  command.argv[option + 1].matches("(?i)^/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock):")
+                )
+              ) ||
+              command.argv[option].matches("(?i)^--mount=.*\\b(source|src)=/([,]|$)") ||
+              command.argv[option].matches("(?i)^--mount=.*\\b(source|src)=/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock)(,|$)") ||
+              (
+                command.argv[option].matches("(?i)^--mount$") &&
+                option + 1 < command.argv.size() &&
+                (
+                  command.argv[option + 1].matches("(?i).*\\b(source|src)=/([,]|$)") ||
+                  command.argv[option + 1].matches("(?i).*\\b(source|src)=/(var/)?run/(docker\\.sock|containerd/containerd\\.sock|crio/crio\\.sock|podman/podman\\.sock)(,|$)")
+                )
+              )
+            ) &&
+            (
+              command.argv[subcommand].matches("(?i)^run$") ||
+              command.argv[option].matches("(?i)^--privileged(=true)?$")
+            )
+          ) + [-1]
+        )[0]
+      ].exists(option,
+        option > subcommand &&
+        lists.range(option).all(i,
+          i <= subcommand ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > subcommand + 1 &&
+            command.argv[i - 1].matches(
+              "(?i)^(-a|--attach|--add-host|--annotation|--blkio-weight-device|--cap-drop|--cgroup-parent|--cidfile|--cpu-period|--cpu-quota|--cpu-rt-period|--cpu-rt-runtime|-c|--cpu-shares|--cpus|--cpuset-cpus|--cpuset-mems|--device|--device-cgroup-rule|--device-read-bps|--device-read-iops|--device-write-bps|--device-write-iops|--dns|--dns-option|--dns-search|--domainname|--entrypoint|-e|--env|--env-file|--expose|--gpus|--group-add|--health-cmd|--health-interval|--health-retries|--health-start-interval|--health-start-period|--health-timeout|-h|--hostname|--init-path|--ip|--ip6|--ipc|--isolation|-l|--label|--label-file|--link|--link-local-ip|--log-driver|--log-opt|--mac-address|-m|--memory|--memory-reservation|--memory-swap|--memory-swappiness|--mount|--name|--network|--network-alias|--oom-score-adj|-p|--publish|--pid|--platform|--pull|--restart|--runtime|--security-opt|--shm-size|--stop-signal|--stop-timeout|--storage-opt|--sysctl|--tmpfs|--ulimit|-u|--user|--userns|--uts|-v|--volume|--volume-driver|--volumes-from|-w|--workdir)$"
+            )
+          )
+        )
+      )
+    )
+  )
+tags: [attack.t1611]

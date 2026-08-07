@@ -1,0 +1,44 @@
+id: integrity.history_tamper
+version: "1.2"
+enabled: true
+title: Shell-history disable or clear requested
+description: |-
+  A command requested unsetting HISTFILE, zeroing history limits, clearing in-memory
+  history, or deleting a standard user history file. If successful, this removes part
+  of the shell-side session record.
+severity: medium
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    (
+      command.name == "unset" &&
+      !command.argv.slice(1, command.argv.size()).exists(arg, arg.matches("^-[^-]*f")) &&
+      command.argv.slice(1, command.argv.size()).exists(arg, arg == "HISTFILE")
+    ) ||
+    (
+      command.assignments.exists(assignment,
+        !assignment.append &&
+        assignment.name in ["HISTSIZE", "HISTFILESIZE"] &&
+        assignment.value == "0"
+      )
+    ) ||
+    (
+      command.name == "history" &&
+      command.argv.slice(1, command.argv.size()).exists(arg, arg.matches("^-.*c.*$"))
+    ) ||
+    (
+      command.name.matches("^(ba|z|da|k)?sh$") &&
+      command.assignments.exists(assignment,
+        !assignment.append &&
+        assignment.name == "HISTFILE" &&
+        assignment.value == "/dev/null"
+      )
+    ) ||
+    (
+      command.name in ["rm", "shred", "truncate"] &&
+      command.argv.slice(1, command.argv.size()).exists(arg,
+        arg.matches("(?i)^(~|\\$HOME|\\$\\{HOME\\}|/root|/home/[^/]+|/Users/[^/]+)[\\\\/]\\.(bash|zsh)_history$")
+      )
+    )
+  )
+tags: [integrity_bypass]

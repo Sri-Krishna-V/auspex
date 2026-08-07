@@ -1,0 +1,61 @@
+id: persistence.shell_profile_write
+version: "1.5"
+enabled: true
+title: Agent targeted a shell startup file
+description: |-
+  A structured action or explicit shell/PowerShell mutator targeted a shell initialization
+  file in a user home or system profile directory. Code placed there runs in future shells.
+severity: medium
+expr: |-
+  (
+    event.event_type == "file.write" &&
+    (
+      event.file_path.matches("^/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root)/(\\.bashrc|\\.zshrc|\\.bash_profile|\\.zprofile|\\.zshenv|\\.profile)$|^/etc/profile\\.d/[^/]+$") ||
+      event.file_path.matches("(?i)^([A-Z]:/Users/[^/]+|/Users/[^/]+)/Documents/(WindowsPowerShell|PowerShell)/[^/]*profile\\.ps1$")
+    )
+  ) || (
+    (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+    shell_commands.exists(command,
+      command.redirects.exists(redirect,
+        redirect.op in ["write", "append"] &&
+        redirect.target.matches("(?i)^((~|\\$HOME|\\$\\{HOME\\}|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root))[\\\\/](\\.bashrc|\\.zshrc|\\.bash_profile|\\.zprofile|\\.zshenv|\\.profile|Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)|/etc/profile\\.d/[^\\\\/]+|(\\$env:USERPROFILE|%USERPROFILE%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+)[\\\\/]Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)$")
+      ) ||
+      (
+        command.name.matches("(?i)^(tee|truncate|sed)$") &&
+        command.argv.exists(arg,
+          arg.matches("(?i)^((~|\\$HOME|\\$\\{HOME\\}|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root))[\\\\/](\\.bashrc|\\.zshrc|\\.bash_profile|\\.zprofile|\\.zshenv|\\.profile|Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)|/etc/profile\\.d/[^\\\\/]+|(\\$env:USERPROFILE|%USERPROFILE%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+)[\\\\/]Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)$")
+        ) &&
+        (
+          !command.name.matches("(?i)^sed$") ||
+          command.argv.exists(arg, arg.matches("(?i)^(-i|--in-place)(=.*)?$"))
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(set-content|add-content|clear-content|out-file)$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)^((~|\\$HOME|\\$\\{HOME\\}|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root))[\\\\/](\\.bashrc|\\.zshrc|\\.bash_profile|\\.zprofile|\\.zshenv|\\.profile|Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)|/etc/profile\\.d/[^\\\\/]+|(\\$env:USERPROFILE|%USERPROFILE%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+)[\\\\/]Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)$") &&
+          (
+            i == 1 ||
+            command.argv[i - 1].matches("(?i)^-(path|literalpath|filepath)$") ||
+            lists.range(i).all(j,
+              j == 0 ||
+              command.argv[j].matches("(?i)^-(force|nonewline|passthru|append|noclobber|whatif|confirm)(:.*)?$")
+            )
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(cp|mv|install|copy-item|move-item)$") &&
+        command.argv.size() > 2 &&
+        (
+          command.argv[command.argv.size() - 1].matches("(?i)^((~|\\$HOME|\\$\\{HOME\\}|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root))[\\\\/](\\.bashrc|\\.zshrc|\\.bash_profile|\\.zprofile|\\.zshenv|\\.profile|Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)|/etc/profile\\.d/[^\\\\/]+|(\\$env:USERPROFILE|%USERPROFILE%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+)[\\\\/]Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)$") ||
+          lists.range(command.argv.size() - 1).exists(i,
+            command.argv[i].matches("(?i)^-destination$") &&
+            command.argv[i + 1].matches("(?i)^((~|\\$HOME|\\$\\{HOME\\}|/(home/[^/]+|Users/[^/]+|root|var/root|private/var/root))[\\\\/](\\.bashrc|\\.zshrc|\\.bash_profile|\\.zprofile|\\.zshenv|\\.profile|Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)|/etc/profile\\.d/[^\\\\/]+|(\\$env:USERPROFILE|%USERPROFILE%|[A-Z]:[\\\\/]Users[\\\\/][^\\\\/]+)[\\\\/]Documents[\\\\/](WindowsPowerShell|PowerShell)[\\\\/][^\\\\/]*profile\\.ps1)$")
+          )
+        )
+      )
+    )
+  )
+tags: [attack.t1546.004]

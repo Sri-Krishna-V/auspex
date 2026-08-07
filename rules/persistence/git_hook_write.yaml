@@ -1,0 +1,57 @@
+id: persistence.git_hook_write
+version: "1.4"
+enabled: true
+title: Git hook mutation requested or observed
+description: |-
+  A structured write or explicit command mutator targeted .git/hooks/. Code there can
+  execute on the next commit, push, or merge.
+severity: medium
+expr: |-
+  (
+    event.event_type == "file.write" &&
+    event.file_path.matches("(^|/)\\.git/hooks/[^/]+$") &&
+    !event.file_path.endsWith(".sample")
+  ) || (
+    (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+    shell_commands.exists(command,
+      command.redirects.exists(redirect,
+        redirect.op in ["write", "append"] &&
+        redirect.target.matches("(?i)(^|[\\\\/])\\.git[\\\\/]hooks[\\\\/][a-z0-9_-]+$")
+      ) ||
+      (
+        command.name.matches("(?i)^(tee|truncate|sed)$") &&
+        command.argv.exists(arg, arg.matches("(?i)(^|[\\\\/])\\.git[\\\\/]hooks[\\\\/][a-z0-9_-]+$")) &&
+        (
+          !command.name.matches("(?i)^sed$") ||
+          command.argv.exists(arg, arg.matches("(?i)^(-i|--in-place)(=.*)?$"))
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(set-content|add-content|clear-content|out-file)$") &&
+        lists.range(command.argv.size()).exists(i,
+          i > 0 &&
+          command.argv[i].matches("(?i)(^|[\\\\/])\\.git[\\\\/]hooks[\\\\/][a-z0-9_-]+$") &&
+          (
+            i == 1 ||
+            command.argv[i - 1].matches("(?i)^-(path|literalpath|filepath)$") ||
+            lists.range(i).all(j,
+              j == 0 ||
+              command.argv[j].matches("(?i)^-(force|nonewline|passthru|append|noclobber|whatif|confirm)(:.*)?$")
+            )
+          )
+        )
+      ) ||
+      (
+        command.name.matches("(?i)^(cp|mv|install|copy-item|move-item)$") &&
+        command.argv.size() > 2 &&
+        (
+          command.argv[command.argv.size() - 1].matches("(?i)(^|[\\\\/])\\.git[\\\\/]hooks[\\\\/][a-z0-9_-]+$") ||
+          lists.range(command.argv.size() - 1).exists(i,
+            command.argv[i].matches("(?i)^-destination$") &&
+            command.argv[i + 1].matches("(?i)(^|[\\\\/])\\.git[\\\\/]hooks[\\\\/][a-z0-9_-]+$")
+          )
+        )
+      )
+    )
+  )
+tags: [attack.t1546]

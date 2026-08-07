@@ -1,0 +1,86 @@
+id: source.git_remote_tamper
+version: "1.4"
+enabled: true
+title: Git remote-routing change requested
+description: |-
+  The agent requested adding or repointing a Git remote, changing its push URL, or
+  installing a URL rewrite. These settings can redirect repository traffic or
+  credentials. Force pushes are not classified without repository policy context.
+severity: medium
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.name.matches("(?i)^git(\\.exe)?$") &&
+    (
+      lists.range(command.argv.size()).exists(remote,
+        remote > 0 &&
+        command.argv[remote].matches("(?i)^remote$") &&
+        lists.range(remote).all(i,
+          i == 0 ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > 1 &&
+            command.argv[i - 1].matches("(?i)^(-C|--git-dir|--work-tree|--namespace|-c)$")
+          )
+        ) &&
+        lists.range(command.argv.size()).exists(action,
+          action > remote &&
+          command.argv[action].matches("(?i)^(set-url|add)$") &&
+          lists.range(action).all(i,
+            i <= remote ||
+            command.argv[i].matches("(?i)^(--verbose|-v)$")
+          ) &&
+          lists.range(command.argv.size() - 1).exists(name,
+            name > action &&
+            !command.argv[name].startsWith("-") &&
+            !command.argv[name + 1].startsWith("-") &&
+            (
+              name == action + 1 ||
+              !command.argv[name - 1].matches("(?i)^(-t|--track|-m|--master)$")
+            ) &&
+            lists.range(name).all(i,
+              i <= action ||
+              command.argv[i].startsWith("-") ||
+              (
+                i > action + 1 &&
+                command.argv[i - 1].matches("(?i)^(-t|--track|-m|--master)$")
+              )
+            )
+          )
+        )
+      ) ||
+      lists.range(command.argv.size()).exists(config,
+        config > 0 &&
+        command.argv[config].matches("(?i)^config$") &&
+        lists.range(config).all(i,
+          i == 0 ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > 1 &&
+            command.argv[i - 1].matches("(?i)^(-C|--git-dir|--work-tree|--namespace|-c)$")
+          )
+        ) &&
+        lists.range(command.argv.size()).exists(key,
+          key > config &&
+          lists.range(key).all(i,
+            i <= config ||
+            command.argv[i].matches("(?i)^(set|--global|--system|--local|--worktree|--add|--append|--replace-all|--fixed-value|--includes|--no-includes|--all)$") ||
+            command.argv[i].matches("(?i)^(--type|--value)=.+$") ||
+            (
+              i > config + 1 &&
+              command.argv[i - 1].matches("(?i)^(--type|--value)$")
+            )
+          ) &&
+          (
+            command.argv[key].matches("(?i)^(remote\\.[a-z0-9_.-]+\\.(url|pushurl)|url\\..+\\.insteadof)=.+$") ||
+            (
+              command.argv[key].matches("(?i)^(remote\\.[a-z0-9_.-]+\\.(url|pushurl)|url\\..+\\.insteadof)$") &&
+              key + 1 < command.argv.size() &&
+              command.argv[key + 1] != ""
+            )
+          )
+        )
+      )
+    )
+  )
+tags: [git_remote_routing]

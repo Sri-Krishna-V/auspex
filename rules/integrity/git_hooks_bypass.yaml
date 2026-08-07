@@ -1,0 +1,92 @@
+id: integrity.git_hooks_bypass
+version: "1.2"
+enabled: true
+title: Git verification hook bypass requested
+description: |-
+  A git commit or push requested disabled local verification hooks (--no-verify, or the
+  commit-only -n alias), or git was pointed at an empty hooks directory. These forms can
+  suppress local secret-scanning, linting, or signing controls.
+severity: medium
+expr: |-
+  (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+  shell_commands.exists(command,
+    command.name.matches("(?i)^git(\\.exe)?$") &&
+    (
+      lists.range(command.argv.size()).exists(subcommand,
+        subcommand > 0 &&
+        command.argv[subcommand].matches("(?i)^(commit|push)$") &&
+        lists.range(subcommand).all(i,
+          i == 0 ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > 1 &&
+            command.argv[i - 1].matches("(?i)^(-C|--git-dir|--work-tree|--namespace|-c)$")
+          )
+        ) &&
+        command.argv.slice(subcommand + 1, command.argv.size()).exists(arg,
+          arg == "--no-verify" ||
+          (command.argv[subcommand].matches("(?i)^commit$") && arg == "-n")
+        )
+      ) ||
+      lists.range(command.argv.size()).exists(config,
+        config > 0 &&
+        command.argv[config].matches("(?i)^config$") &&
+        lists.range(config).all(i,
+          i == 0 ||
+          command.argv[i].startsWith("-") ||
+          (
+            i > 1 &&
+            command.argv[i - 1].matches("(?i)^(-C|--git-dir|--work-tree|--namespace|-c)$")
+          )
+        ) &&
+        lists.range(command.argv.size()).exists(key,
+          key > config &&
+          (
+            command.argv[key].matches("(?i)^core\\.hooksPath=(/dev/null)?$") ||
+            (
+              command.argv[key].matches("(?i)^core\\.hooksPath$") &&
+              key + 1 < command.argv.size() &&
+              command.argv[key + 1].matches("^(/dev/null)?$")
+            )
+          ) &&
+          lists.range(key).all(i,
+            i <= config ||
+            command.argv[i].matches("(?i)^(set|--global|--system|--local|--worktree|--replace-all|--add|--fixed-value|-z|--null)$") ||
+            command.argv[i].matches("(?i)^(--type|-t)=.*$") ||
+            (
+              i > config + 1 &&
+              command.argv[i - 1].matches("(?i)^(--type|-t)$")
+            )
+          )
+        )
+      ) ||
+      (
+        lists.range(command.argv.size() - 1).exists(i,
+          i > 0 &&
+          command.argv[i] == "-c" &&
+          command.argv[i + 1].matches("(?i)^core\\.hooksPath=(/dev/null)?$") &&
+          lists.range(i).all(j,
+            j == 0 ||
+            command.argv[j].startsWith("-") ||
+            (
+              j > 1 &&
+              command.argv[j - 1].matches("(?i)^(-C|--git-dir|--work-tree|--namespace|-c)$")
+            )
+          ) &&
+          lists.range(command.argv.size()).exists(subcommand,
+            subcommand > i + 1 &&
+            command.argv[subcommand].matches("(?i)^(commit|push)$") &&
+            lists.range(subcommand).all(j,
+              j == 0 ||
+              command.argv[j].startsWith("-") ||
+              (
+                j > 1 &&
+                command.argv[j - 1].matches("(?i)^(-C|--git-dir|--work-tree|--namespace|-c)$")
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+tags: [integrity_bypass]

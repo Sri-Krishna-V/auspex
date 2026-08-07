@@ -1,0 +1,112 @@
+id: privilege.access_control_mutation
+version: "1.3"
+enabled: true
+title: Agent requested a sensitive access-control change
+description: |-
+  The agent requested setuid or a dangerous Linux capability, or requested an
+  ownership, ACL, or read/write permission change on a protected credential or policy
+  path.
+severity: high
+expr: |-
+  (
+    event.event_type == "command.exec" ||
+    (event.source_type == "otel" && event.event_type == "command.result")
+  ) &&
+  shell_commands.exists(command,
+    (
+      command.name.matches("(?i)^chmod$") &&
+      lists.range(command.argv.size() - 1).exists(mode,
+        mode > 0 &&
+        lists.range(mode).all(i, i == 0 || command.argv[i].startsWith("-")) &&
+        (
+          command.argv[mode].matches("^[4-7][0-7]{3}$") ||
+          command.argv[mode].matches("^(?:[ugoa]*[ua][ugoa]*)?[+=][rwxX]*s[rwxXst]*$") ||
+          (
+            (
+              command.argv[mode].matches("^[0-7]{2,3}[2-7]$") ||
+              command.argv[mode].matches("^[ugoa]*[+=][rwxXst]*[rw][rwxXst]*$")
+            ) &&
+            command.argv.slice(mode + 1, command.argv.size()).exists(path,
+              path.matches("(?i)^(/etc/(shadow|gshadow|passwd|sudoers)(/.*)?|/etc/(ssh|ssl/private)(/.*)?|/root(/.*)?|(~|\\$HOME|\\$\\{HOME\\}|/(home|Users)/[^/]+)/\\.ssh/(authorized_keys|id_[^/]+))$")
+            )
+          )
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^install$") &&
+      lists.range(command.argv.size()).exists(mode,
+        mode > 0 &&
+        (
+          command.argv[mode].matches("(?i)^(-m|--mode)=([4-7][0-7]{3}|(?:[ugoa]*[ua][ugoa]*)?[+=][rwxX]*s[rwxXst]*)$") ||
+          (
+            command.argv[mode].matches("(?i)^(-m|--mode)$") &&
+            mode + 1 < command.argv.size() &&
+            (
+              command.argv[mode + 1].matches("^[4-7][0-7]{3}$") ||
+              command.argv[mode + 1].matches("^(?:[ugoa]*[ua][ugoa]*)?[+=][rwxX]*s[rwxXst]*$")
+            )
+          ) ||
+          (
+            (
+              command.argv[mode].matches("(?i)^(-m|--mode)=[0-7]{2,3}[2-7]$") ||
+              (
+                command.argv[mode].matches("(?i)^(-m|--mode)$") &&
+                mode + 1 < command.argv.size() &&
+                command.argv[mode + 1].matches("^[0-7]{2,3}[2-7]$")
+              )
+            ) &&
+            command.argv[command.argv.size() - 1].matches("(?i)^(/etc/(shadow|gshadow|passwd|sudoers)(/.*)?|/etc/(ssh|ssl/private)(/.*)?|/root(/.*)?|(~|\\$HOME|\\$\\{HOME\\}|/(home|Users)/[^/]+)/\\.ssh/(authorized_keys|id_[^/]+))$")
+          )
+        )
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(chown|chgrp|setfacl)$") &&
+      command.argv.size() > 2 &&
+      command.argv.slice(2, command.argv.size()).exists(path,
+        path.matches("(?i)^(/etc/(shadow|gshadow|passwd|sudoers)(/.*)?|/etc/(ssh|ssl/private)(/.*)?|/root(/.*)?|(~|\\$HOME|\\$\\{HOME\\}|/(home|Users)/[^/]+)/\\.ssh/(authorized_keys|id_[^/]+))$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^(chown|chgrp)$") &&
+      command.argv.size() > 2 &&
+      command.argv.exists(arg, arg.matches("(?i)^(--recursive|-[A-Za-z]*R[A-Za-z]*)$")) &&
+      command.argv.slice(2, command.argv.size()).exists(path,
+        path.matches("(?i)^(~|\\$HOME|\\$\\{HOME\\}|/(home|Users)/[^/]+)[\\\\/]\\.ssh([\\\\/].*)?$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^setcap$") &&
+      command.argv.slice(1, command.argv.size()).exists(arg,
+        arg.matches("(?i).*\\bcap_(setuid|setgid|sys_admin|dac_override|dac_read_search|sys_ptrace|sys_module|sys_rawio|net_admin|chown|fowner)[^ ]*[+=][eip]+.*")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^icacls(\\.exe)?$") &&
+      command.argv.exists(arg, arg.matches("(?i)^/(grant|setowner)(:.*)?$")) &&
+      command.argv.slice(1, command.argv.size()).exists(path,
+        path.matches("(?i)^([A-Za-z]:[\\\\/]Windows[\\\\/]System32[\\\\/]config[\\\\/](SAM|SECURITY|SYSTEM)|[A-Za-z]:[\\\\/]ProgramData[\\\\/]ssh[\\\\/][^\\\\/]+|[A-Za-z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]\\.ssh[\\\\/](authorized_keys|id_[^\\\\/]+)|\\$env:ProgramData[\\\\/]ssh[\\\\/][^\\\\/]+|\\$env:USERPROFILE[\\\\/]\\.ssh[\\\\/](authorized_keys|id_[^\\\\/]+))$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^takeown(\\.exe)?$") &&
+      lists.range(command.argv.size() - 1).exists(i,
+        i > 0 &&
+        command.argv[i].matches("(?i)^/f$") &&
+        command.argv[i + 1].matches("(?i)^([A-Za-z]:[\\\\/]Windows[\\\\/]System32[\\\\/]config[\\\\/](SAM|SECURITY|SYSTEM)|[A-Za-z]:[\\\\/]ProgramData[\\\\/]ssh[\\\\/][^\\\\/]+|[A-Za-z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]\\.ssh[\\\\/](authorized_keys|id_[^\\\\/]+)|\\$env:ProgramData[\\\\/]ssh[\\\\/][^\\\\/]+|\\$env:USERPROFILE[\\\\/]\\.ssh[\\\\/](authorized_keys|id_[^\\\\/]+))$")
+      )
+    ) ||
+    (
+      command.name.matches("(?i)^set-acl$") &&
+      lists.range(command.argv.size()).exists(i,
+        i > 0 &&
+        command.argv[i].matches("(?i)^([A-Za-z]:[\\\\/]Windows[\\\\/]System32[\\\\/]config[\\\\/](SAM|SECURITY|SYSTEM)|[A-Za-z]:[\\\\/]ProgramData[\\\\/]ssh[\\\\/][^\\\\/]+|[A-Za-z]:[\\\\/]Users[\\\\/][^\\\\/]+[\\\\/]\\.ssh[\\\\/](authorized_keys|id_[^\\\\/]+)|\\$env:ProgramData[\\\\/]ssh[\\\\/][^\\\\/]+|\\$env:USERPROFILE[\\\\/]\\.ssh[\\\\/](authorized_keys|id_[^\\\\/]+))$") &&
+        (
+          i == 1 ||
+          command.argv[i - 1].matches("(?i)^-(path|literalpath)$")
+        )
+      )
+    )
+  )
+tags: [attack.t1222, attack.t1548.001, access_control_change]

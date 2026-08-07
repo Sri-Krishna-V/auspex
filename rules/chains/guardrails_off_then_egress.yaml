@@ -1,0 +1,142 @@
+id: chain.guardrails_off_then_egress
+version: "1.4"
+enabled: true
+title: Unattended approval mode followed by data-bearing egress
+description: |-
+  The session entered a mode that does not require interactive human approval (Claude
+  auto/bypassPermissions or Gemini/Qwen yolo) and later proposed a data-bearing outbound
+  command or MCP call. The chain reports ordering, not confirmed transmission.
+severity: high
+sequence:
+  within_events: 64
+  steps:
+    - expr: |-
+        event.tags.exists(t, t == "permission_mode_elevated") &&
+        (
+          (
+            event.event_type == "config.agent" &&
+            event.content_preview.matches("(?i)^(auto|bypasspermissions|yolo)$")
+          ) || (
+            event.event_type == "session.start" &&
+            event.content_preview.matches("(?i)^yolo$")
+          )
+        )
+    - expr: |-
+        (
+          (event.event_type == "command.exec" || (event.source_type == "otel" && event.event_type == "command.result")) &&
+          shell_commands.exists(command,
+            (
+              command.name.matches("(?i)^curl(\\.exe)?$") &&
+              !command.argv.exists(arg, arg in ["-h", "--help", "--manual", "-V", "--version"]) &&
+              (
+                command.argv.exists(arg,
+                  (arg.matches("(?i)^https?://[^\\s]+$") || arg.matches("(?i)^--url=https?://[^\\s]+$")) &&
+                  !arg.matches("(?i)^(--url=)?https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|$)")
+                ) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i] == "--url" &&
+                  command.argv[i + 1].matches("(?i)^https?://[^\\s]+$") &&
+                  !command.argv[i + 1].matches("(?i)^https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|$)")
+                )
+              ) &&
+              (
+                command.argv.exists(arg,
+                  arg.matches("(?i)^--(data|data-ascii|data-binary|data-raw|data-urlencode|form|form-string|upload-file|json|user|cookie|oauth2-bearer)=.+$") ||
+                  arg.matches("(?i)^(-d|-F|-T|-u|-b).+$") ||
+                  arg.matches("(?i)^(-H|--header=)(authorization|cookie|x-api-key|api-key|x-auth-token|x-access-token|x-token)\\s*:.+$")
+                ) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i].matches("(?i)^(-d|-F|-T|-u|-b|--data|--data-ascii|--data-binary|--data-raw|--data-urlencode|--form|--form-string|--upload-file|--json|--user|--cookie|--oauth2-bearer)$") &&
+                  command.argv[i + 1] != "" &&
+                  !command.argv[i + 1].matches("(?i)^https?://[^\\s]+$")
+                ) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i].matches("(?i)^(-H|--header)$") &&
+                  command.argv[i + 1].matches("(?i)^(authorization|cookie|x-api-key|api-key|x-auth-token|x-access-token|x-token)\\s*:.+$")
+                )
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^wget(\\.exe)?$") &&
+              !command.argv.exists(arg, arg in ["-h", "--help", "-V", "--version", "--spider"]) &&
+              command.argv.exists(arg,
+                arg.matches("(?i)^https?://[^\\s]+$") &&
+                !arg.matches("(?i)^https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|$)")
+              ) &&
+              (
+                command.argv.exists(arg,
+                  arg.matches("(?i)^--(post|body)-(data|file)=.+$") ||
+                  arg.matches("(?i)^--header=(authorization|cookie|x-api-key|api-key|x-auth-token|x-access-token|x-token)\\s*:.+$")
+                ) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i].matches("(?i)^--(post|body)-(data|file)$") &&
+                  command.argv[i + 1] != "" &&
+                  !command.argv[i + 1].matches("(?i)^https?://[^\\s]+$")
+                ) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i] == "--header" &&
+                  command.argv[i + 1].matches("(?i)^(authorization|cookie|x-api-key|api-key|x-auth-token|x-access-token|x-token)\\s*:.+$")
+                )
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^python[0-9.]*(\\.exe)?$") &&
+              lists.range(command.argv.size() - 1).exists(i,
+                command.argv[i] == "-c" &&
+                command.argv[i + 1].matches("(?is)^\\s*import\\s+(requests|httpx)\\s*;\\s*(requests|httpx)\\.(post|put|patch)\\s*\\(\\s*['\"]https?://[^'\"\\s]+['\"]\\s*,[^)]*\\b(data|json|files|content|cookies|auth)\\s*=") &&
+                !command.argv[i + 1].matches("(?is)^\\s*import\\s+(requests|httpx)\\s*;\\s*(requests|httpx)\\.(post|put|patch)\\s*\\(\\s*['\"]https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|['\"])")
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^node(\\.exe)?$") &&
+              lists.range(command.argv.size() - 1).exists(i,
+                command.argv[i].matches("(?i)^(-e|--eval)$") &&
+                (
+                  command.argv[i + 1].matches("(?is)^\\s*((const|let|var)\\s+axios\\s*=\\s*require\\s*\\(\\s*['\"]axios['\"]\\s*\\)\\s*;\\s*)?axios\\.(post|put|patch)\\s*\\(\\s*['\"]https?://[^'\"\\s]+['\"]\\s*,\\s*[^\\s,)]") ||
+                  command.argv[i + 1].matches("(?is)^\\s*fetch\\s*\\(\\s*['\"]https?://[^'\"\\s]+['\"]\\s*,\\s*\\{[^}]*(method\\s*:\\s*['\"](post|put|patch)['\"][^}]*body\\s*:|body\\s*:[^}]*method\\s*:\\s*['\"](post|put|patch)['\"])[^}]*\\}\\s*\\)")
+                ) &&
+                !command.argv[i + 1].matches("(?is)^\\s*(fetch\\s*\\(|((const|let|var)\\s+axios\\s*=.*;\\s*)?axios\\.(post|put|patch)\\s*\\()\\s*['\"]https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|['\"])")
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^(invoke-restmethod|invoke-webrequest|irm|iwr)$") &&
+              (
+                command.argv.exists(arg,
+                  arg.matches("(?i)^-uri=https?://[^\\s]+$") &&
+                  !arg.matches("(?i)^-uri=https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|$)")
+                ) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i].matches("(?i)^-uri$") &&
+                  command.argv[i + 1].matches("(?i)^https?://[^\\s]+$") &&
+                  !command.argv[i + 1].matches("(?i)^https?://(localhost|127(\\.[0-9]{1,3}){3}|\\[::1\\])(:[0-9]+)?(/|$)")
+                )
+              ) &&
+              (
+                command.argv.exists(arg, arg.matches("(?i)^-(body|infile)=.+$")) ||
+                lists.range(command.argv.size() - 1).exists(i,
+                  command.argv[i].matches("(?i)^-(body|infile)$") &&
+                  command.argv[i + 1] != ""
+                )
+              )
+            ) ||
+            (
+              command.name.matches("(?i)^(scp|rsync)(\\.exe)?$") &&
+              !command.argv.exists(arg, arg.matches("(?i)^(--help|--version)$")) &&
+              lists.range(command.argv.size()).exists(i,
+                i > 1 &&
+                command.argv[i].matches("(?i)^(?:[^\\s:@/]+@)?((?:[a-z0-9-]+\\.)+[a-z][a-z0-9-]*|(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|\\[[1-9a-f][0-9a-f:]*\\]):[^\\s]+$") &&
+                command.argv.slice(1, i).exists(arg, !arg.startsWith("-"))
+              )
+            )
+          )
+        ) ||
+        (
+          event.event_type == "tool.call" &&
+          event.mcp_tool != "" &&
+          (
+            event.mcp_tool.matches("(?i)(^|[._-])(send|sendmail|upload|share|publish|mail)([._-]|$)") ||
+            event.mcp_tool.matches("(?i)(^post$|(^|[._-])(create|update|write|submit|publish|send)[._-]post$|(^|[._-])post[._-](message|reply|comment|content|file|attachment|status)([._-]|$))")
+          ) &&
+          !event.mcp_tool.matches("(?i)(^|[._-])(get|read|list|search|fetch|lookup|describe|delete|remove|revoke|cancel|archive)([._-]|$)")
+        )
+tags: [attack.t1562.001, attack.t1048, attack.t1567]

@@ -1,0 +1,15 @@
+id: persistence.ssh_authorized_keys
+version: "1.2"
+enabled: true
+title: SSH authorized_keys modification
+description: |-
+  A structured file write targeted an OpenSSH login-key file under a known user home or
+  the Windows administrators key path. Adding a key grants standing remote access.
+severity: critical
+expr: |-
+  event.event_type == "file.write" &&
+  (
+    event.file_path.matches("(?i)^(~|\\$HOME|\\$env:(USERPROFILE|HOME)|%USERPROFILE%|/home/[^/]+|/Users/[^/]+|/root|/var/root|/private/var/root|[A-Z]:/Users/[^/]+)/\\.ssh/authorized_keys2?$") ||
+    event.file_path.matches("(?i)^([A-Z]:/ProgramData|\\$env:ProgramData|%ProgramData%)/ssh/administrators_authorized_keys$")
+  )
+tags: [attack.t1098.004]

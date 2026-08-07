@@ -1,0 +1,13 @@
+id: tamper.guardrails_off
+version: "1.1"
+enabled: true
+title: Session used a reduced-approval permission mode
+description: |-
+  The session started in or switched to a mode where permitted actions may run without
+  individual approval. This may be an intentional operator choice and is reported as
+  posture context.
+severity: low
+expr: |-
+  (event.event_type == "config.agent" || event.event_type == "session.start") &&
+  event.tags.exists(t, t == "permission_mode_elevated")
+tags: [agent_permission_mode]
