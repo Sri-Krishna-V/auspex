@@ -1,0 +1,52 @@
+version: 2
+
+project_name: auspex
+
+builds:
+  - id: auspex
+    main: ./cmd/auspex
+    binary: auspex
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/Sri-Krishna-V/auspex/internal/version.Version={{.Version}}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: auspex
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      auspex_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - CONTRIBUTING.md
+      - LICENSE
+      - README.md
+      - SECURITY.md
+      - THIRD_PARTY_LICENSES.txt
+      - docs/*.md
+      - docs/**/*
+      - rules/**/*.yaml
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+release:
+  prerelease: auto
