@@ -1,0 +1,51 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      # Close on read paths and best-effort temp cleanup have no actionable
+      # error path here; checking them is noise.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - os.Remove
+    staticcheck:
+      # QF* are quickfix style refactors (De Morgan, tagged switch, ...).
+      # They are stylistic, not correctness, so they stay off to keep the
+      # signal high; SA/S/ST correctness and simplification checks remain on.
+      checks:
+        - all
+        - -QF1001
+        - -QF1002
+  exclusions:
+    rules:
+      # Writes to the process output streams in CLI render and usage paths are
+      # best-effort: a failed write there (broken pipe) has no recovery path.
+      # Narrowed to those writers by their conventional names so a dropped
+      # error on any other io.Writer (e.g. evalFixture's output sink, which is
+      # now handled) stays visible.
+      - linters: [errcheck]
+        source: 'fmt\.Fprint(f|ln)?\((stdout|stderr|w)\b'
+      # Deferred Close in tests is cleanup; an error there is not actionable.
+      - path: _test\.go
+        linters: [errcheck]
+        source: 'defer .*\.Close\(\)'
+      # Tests deliberately call a function twice with identical arguments to
+      # assert determinism, and carry unused helper scaffolding; SA4000 and
+      # unused fire on those by design.
+      - path: _test\.go
+        linters: [staticcheck]
+        text: 'SA4000'
+      - path: _test\.go
+        linters: [unused]
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt

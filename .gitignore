@@ -1,0 +1,7 @@
+/auspex
+/dist/
+.DS_Store
+.claude/settings.local.json
+*.auspex/
+*.db
+coverage.out
