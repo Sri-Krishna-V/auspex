@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/Sri-Krishna-V/auspex/internal/model"
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestWalkFindsJSONLRecursively(t *testing.T) {

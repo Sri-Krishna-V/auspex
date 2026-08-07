@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/Sri-Krishna-V/auspex/internal/discover"
 	"github.com/Sri-Krishna-V/auspex/internal/extract"
 	"github.com/Sri-Krishna-V/auspex/internal/finding"
 	"github.com/Sri-Krishna-V/auspex/internal/model"
 	"github.com/Sri-Krishna-V/auspex/internal/output"
 	"github.com/Sri-Krishna-V/auspex/internal/pipeline"
+	"github.com/klauspost/compress/zstd"
 )
 
 // newTestScannerPipeline builds the shared pipeline the same way runScan does,
