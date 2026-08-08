@@ -272,6 +272,7 @@ func withEnvelope(fields map[string]struct{}, hasSchemaVersion bool) map[string]
 	fields["record_type"] = struct{}{}
 	fields["run_id"] = struct{}{}
 	fields["endpoint"] = struct{}{}
+	fields["ruleset_digest"] = struct{}{}
 	if !hasSchemaVersion {
 		fields["schema_version"] = struct{}{}
 	}

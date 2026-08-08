@@ -339,3 +339,55 @@ func TestUserEnvelopeOnRecordsAndDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+// TestRulesetDigestAbsentWhenUnset pins the "absent means no catalog was
+// resolved" contract: an emitter that never learned a digest must not invent
+// one, and the stderr diagnostic path must stay byte-identical to before the
+// field existed. A sentinel value here would read as an attestation.
+func TestRulesetDigestAbsentWhenUnset(t *testing.T) {
+	var recs, diags bytes.Buffer
+	e := New(&recs, &diags, "run-nodigest")
+	if err := e.EmitSummary(ScanSummary{Status: StatusComplete}); err != nil {
+		t.Fatal(err)
+	}
+	e.Diag(DiagnosticInfo, "ready")
+
+	for label, raw := range map[string]string{"record": recs.String(), "diagnostic": diags.String()} {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &fields); err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		if _, ok := fields["ruleset_digest"]; ok {
+			t.Fatalf("%s carries ruleset_digest with no catalog resolved: %s", label, raw)
+		}
+	}
+}
+
+// TestRulesetDigestStampedOnEveryRecord: once set, the digest rides the same
+// envelope as run_id, including diagnostics routed into the record sink.
+func TestRulesetDigestStampedOnEveryRecord(t *testing.T) {
+	const digest = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+	var recs bytes.Buffer
+	e := NewWithSinkAndDiagnostics(nopCloseSink{&recs}, "run-digest")
+	e.SetRulesetDigest(digest)
+	if err := e.EmitFinding(testFinding("finding-1")); err != nil {
+		t.Fatal(err)
+	}
+	e.Diag(DiagnosticWarn, "operator rules replaced built-in rule ids: secrets.agent_read_env")
+
+	lines := strings.Split(strings.TrimSpace(recs.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d records, want 2", len(lines))
+	}
+	for _, line := range lines {
+		var record struct {
+			RulesetDigest string `json:"ruleset_digest"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		if record.RulesetDigest != digest {
+			t.Fatalf("ruleset_digest = %q, want %q\n%s", record.RulesetDigest, digest, line)
+		}
+	}
+}

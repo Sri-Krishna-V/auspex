@@ -765,8 +765,11 @@ record modes, sinks, and exit codes.
 `scan`, `collect`, `hook EVENT`, `hook install`, and `rules check|list|test`
 accept `--rules-dir DIR` (repeatable) to add operator rules or replace embedded
 rules by id.
-Use `--no-builtin-rules` for an operator-only catalog. Full flag and output
-reference: [docs/cli.md](docs/cli.md).
+Use `--no-builtin-rules` for an operator-only catalog. A replacement is never
+silent: the run warns with the replaced ids, and every record carries a
+`ruleset_digest` over the rule files that actually loaded, so a swapped catalog
+is visible on the wire instead of looking like a healthy endpoint. Full flag and
+output reference: [docs/cli.md](docs/cli.md).
 
 ---
 

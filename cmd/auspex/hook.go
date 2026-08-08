@@ -325,10 +325,12 @@ func handleHook(event string, lc hook.Lifecycle, agent, sourceAgent string, stdi
 		if expandErr != nil {
 			return false, "", "", closeWithDiagnostic(expandErr)
 		}
-		eng, err = buildEngine(ruleDirs, opts.noBuiltin)
+		var info rulesetInfo
+		eng, info, err = buildEngineWithRuleset(ruleDirs, opts.noBuiltin)
 		if err != nil {
 			return false, "", "", closeWithDiagnostic(err)
 		}
+		applyRulesetInfo(em, info)
 	}
 	// Hook processes are short-lived, so sequence windows use the shared state
 	// database. Unavailable state skips sequence rules; it must not disable an

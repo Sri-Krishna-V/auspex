@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -14,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/Sri-Krishna-V/auspex/internal/model"
+	"github.com/Sri-Krishna-V/auspex/internal/output"
 	"github.com/Sri-Krishna-V/auspex/internal/rule"
 	"github.com/Sri-Krishna-V/auspex/internal/sequence"
 	"github.com/Sri-Krishna-V/auspex/rules"
@@ -93,33 +96,36 @@ func (rf *ruleFlags) register(fs *flag.FlagSet) {
 // at least one rule source so a typo'd or empty directory fails loudly rather
 // than silently contributing no rules. NewEngine still rejects any duplicates
 // left in the effective catalog as a defense-in-depth invariant.
-func loadRuleSources(rulesDirs []string, noBuiltin bool) ([]rule.Source, error) {
+//
+// The second return names the built-in ids an operator definition replaced, so
+// a command can say out loud that a shipped detection is no longer running.
+func loadRuleSources(rulesDirs []string, noBuiltin bool) ([]rule.Source, []string, error) {
 	if noBuiltin && len(rulesDirs) == 0 {
-		return nil, fmt.Errorf("--no-builtin-rules requires at least one --rules-dir")
+		return nil, nil, fmt.Errorf("--no-builtin-rules requires at least one --rules-dir")
 	}
 	var builtins []rule.Source
 	if !noBuiltin {
 		var err error
 		builtins, err = loadBuiltinRuleSources()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	var operatorSources []rule.Source
 	for _, dir := range rulesDirs {
 		info, err := os.Stat(dir)
 		if err != nil {
-			return nil, fmt.Errorf("rules dir %q: %w", dir, err)
+			return nil, nil, fmt.Errorf("rules dir %q: %w", dir, err)
 		}
 		if !info.IsDir() {
-			return nil, fmt.Errorf("rules dir %q: not a directory", dir)
+			return nil, nil, fmt.Errorf("rules dir %q: not a directory", dir)
 		}
 		userSources, err := rule.LoadSourcesFS(os.DirFS(dir), ".")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if len(userSources) == 0 {
-			return nil, fmt.Errorf("rules dir %q: no YAML rule files found", dir)
+			return nil, nil, fmt.Errorf("rules dir %q: no YAML rule files found", dir)
 		}
 		// Qualify each source's loader-relative path with its dir so duplicate-id
 		// diagnostics stay unambiguous across multiple --rules-dir values.
@@ -135,25 +141,30 @@ func loadRuleSources(rulesDirs []string, noBuiltin bool) ([]rule.Source, error) 
 // loading: an explicit operator definition replaces an embedded definition
 // with the same id. It preserves the built-in's catalog position so output
 // ordering does not change merely because an embedded definition was replaced.
-func overlayRuleSources(builtins, operators []rule.Source) ([]rule.Source, error) {
+// Every replaced id is returned, sorted, so the caller can report the shipped
+// detections that are no longer running.
+func overlayRuleSources(builtins, operators []rule.Source) ([]rule.Source, []string, error) {
 	builtinIndex, err := uniqueRuleSourceIndex(builtins, "built-in")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := uniqueRuleSourceIndex(operators, "operator"); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	effective := append([]rule.Source(nil), builtins...)
+	var eclipsed []string
 	for _, source := range operators {
 		id := source.Rules[0].ID
 		if i, ok := builtinIndex[id]; ok {
 			effective[i] = source
+			eclipsed = append(eclipsed, id)
 			continue
 		}
 		effective = append(effective, source)
 	}
-	return effective, nil
+	sort.Strings(eclipsed)
+	return effective, eclipsed, nil
 }
 
 func uniqueRuleSourceIndex(sources []rule.Source, layer string) (map[string]int, error) {
@@ -200,16 +211,102 @@ func compileEngine(sources []rule.Source) (*rule.Engine, error) {
 	return eng, nil
 }
 
-// buildEngine loads the rule files (see loadRuleSources) and compiles them.
-func buildEngine(rulesDirs []string, noBuiltin bool) (*rule.Engine, error) {
+// rulesetInfo describes the catalog a command actually compiled: the digest
+// that attests it and the built-in ids an operator directory replaced.
+type rulesetInfo struct {
+	digest   string
+	eclipsed []string
+}
+
+// rulesetDigest attests the effective rule catalog as one comparable value, so
+// a receiver can tell two endpoints apart by what they were actually running.
+//
+// It folds each source's file digest — raw bytes, not decoded fields, because
+// the threat is a stub that keeps a built-in's id and author-declared version
+// while neutering its expression — keyed by rule id and sorted by id rather
+// than path: a path carries the operator's local directory and would differ
+// across endpoints running an identical catalog.
+//
+// The hashed input is:
+//
+//	auspex-ruleset-v1\n
+//	builtin\n                    (or nobuiltin\n under --no-builtin-rules)
+//	<id> <64-hex file digest>\n  once per source, sorted
+//
+// The builtin line keeps "embedded catalog" distinct from an operator-only
+// catalog that happens to contain the same files.
+func rulesetDigest(sources []rule.Source, noBuiltin bool) string {
+	lines := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if len(source.Rules) == 0 {
+			continue
+		}
+		lines = append(lines, source.Rules[0].ID+" "+source.Digest+"\n")
+	}
+	// Ids are unique across an effective catalog, so ordering whole lines
+	// orders by id. Sorting is what keeps the digest stable across runs.
+	sort.Strings(lines)
+
+	var input strings.Builder
+	input.WriteString("auspex-ruleset-v1\n")
+	if noBuiltin {
+		input.WriteString("nobuiltin\n")
+	} else {
+		input.WriteString("builtin\n")
+	}
+	for _, line := range lines {
+		input.WriteString(line)
+	}
+	sum := sha256.Sum256([]byte(input.String()))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// applyRulesetInfo stamps the effective catalog on the emitter and warns when
+// operator rules replaced shipped detections. Both report the same fact — which
+// rules actually ran — so they are applied at the same point, before any record
+// is emitted.
+func applyRulesetInfo(em *output.Emitter, info rulesetInfo) {
+	em.SetRulesetDigest(info.digest)
+	if len(info.eclipsed) > 0 {
+		em.Diag(output.DiagnosticWarn, "operator rules replaced built-in rule ids: "+strings.Join(info.eclipsed, ", "))
+	}
+}
+
+// buildEngineWithRuleset loads the rule files (see loadRuleSources), compiles
+// them, and reports what was loaded. The digest is always derived from the very
+// sources that produced the returned engine: re-loading them separately would
+// let a file edited in between describe a catalog that never ran.
+func buildEngineWithRuleset(rulesDirs []string, noBuiltin bool) (*rule.Engine, rulesetInfo, error) {
 	if len(rulesDirs) == 0 && !noBuiltin {
-		return loadBuiltinRuleEngine()
+		eng, err := loadBuiltinRuleEngine()
+		if err != nil {
+			return nil, rulesetInfo{}, err
+		}
+		// loadBuiltinRuleSources is a sync.OnceValues over embedded, immutable
+		// files, so this returns the exact slice eng was compiled from.
+		sources, err := loadBuiltinRuleSources()
+		if err != nil {
+			return nil, rulesetInfo{}, err
+		}
+		return eng, rulesetInfo{digest: rulesetDigest(sources, noBuiltin)}, nil
 	}
-	sources, err := loadRuleSources(rulesDirs, noBuiltin)
+	sources, eclipsed, err := loadRuleSources(rulesDirs, noBuiltin)
 	if err != nil {
-		return nil, err
+		return nil, rulesetInfo{}, err
 	}
-	return compileEngine(sources)
+	eng, err := compileEngine(sources)
+	if err != nil {
+		return nil, rulesetInfo{}, err
+	}
+	return eng, rulesetInfo{digest: rulesetDigest(sources, noBuiltin), eclipsed: eclipsed}, nil
+}
+
+// buildEngine is buildEngineWithRuleset for the callers that only need the
+// engine (the rules subcommands and install-time enforcement validation, none
+// of which emit records).
+func buildEngine(rulesDirs []string, noBuiltin bool) (*rule.Engine, error) {
+	eng, _, err := buildEngineWithRuleset(rulesDirs, noBuiltin)
+	return eng, err
 }
 
 func runRulesCheck(args []string, stdout, stderr io.Writer) int {

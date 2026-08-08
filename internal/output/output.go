@@ -48,6 +48,12 @@ const (
 const EnvDeviceID = "AUSPEX_DEVICE_ID"
 
 // Diagnostic is a non-finding operational message (info/warn/error).
+//
+// RulesetDigest is declared so the diagnostic schema documents the same
+// envelope field the other records carry, but nothing sets it: diagnostics
+// routed to the record sink pick the value up from emitLocked, and the stderr
+// path leaves the key absent because a diagnostic can be written before rules
+// are ever resolved.
 type Diagnostic struct {
 	SchemaVersion string   `json:"schema_version"`
 	RecordType    string   `json:"record_type"`
@@ -56,6 +62,7 @@ type Diagnostic struct {
 	Timestamp     string   `json:"timestamp"`
 	Level         string   `json:"level"`
 	Message       string   `json:"message"`
+	RulesetDigest string   `json:"ruleset_digest,omitempty"`
 }
 
 // Endpoint identifies the user and host that emitted a record.
@@ -166,6 +173,7 @@ type Emitter struct {
 	sink              Sink
 	diags             *json.Encoder
 	diagnosticsInSink bool
+	rulesetDigest     string
 	eventsEmitted     int
 	findingsEmitted   int
 	indicatorsEmitted int
@@ -224,6 +232,19 @@ type nopCloseSink struct{ io.Writer }
 
 func (nopCloseSink) Close() error { return nil }
 
+// SetRulesetDigest records the attestation of the rule catalog this run
+// resolved; every record emitted afterwards carries it as ruleset_digest. It is
+// a setter rather than a constructor parameter because every emitting command
+// builds its Emitter before its engine, deliberately, so a rule-load failure
+// still has somewhere to be reported. An empty digest leaves the key absent,
+// which reads as "no catalog was resolved for this record" — the honest shape
+// for an event-only run that never compiles rules.
+func (e *Emitter) SetRulesetDigest(digest string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.rulesetDigest = digest
+}
+
 // emitLocked marshals payload, injects the record_type/run_id envelope, and
 // writes the resulting object as one NDJSON line. The caller holds e.mu.
 func (e *Emitter) emitLocked(recordType string, payload any) error {
@@ -241,6 +262,9 @@ func (e *Emitter) emitLocked(recordType string, payload any) error {
 		fields["schema_version"], _ = json.Marshal(model.SchemaVersion)
 	}
 	fields["endpoint"], _ = json.Marshal(e.endpoint)
+	if e.rulesetDigest != "" {
+		fields["ruleset_digest"], _ = json.Marshal(e.rulesetDigest)
+	}
 	line, err := json.Marshal(fields)
 	if err != nil {
 		return err

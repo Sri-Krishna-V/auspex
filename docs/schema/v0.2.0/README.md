@@ -18,6 +18,29 @@ Every emitted line carries an `endpoint` object with `hostname`, `os`, `arch`,
 `username`, and `uid`. Set `AUSPEX_DEVICE_ID` to add a stable opaque
 `endpoint.device_id` for fleet joins.
 
+A line also carries `ruleset_digest` whenever the run resolved a rule catalog:
+a `sha256:` fold of every loaded rule file's raw bytes, keyed by rule id. It is
+byte-sensitive on purpose. `--rules-dir` replaces a built-in rule that shares
+its stable id, so a stub carrying a built-in's id and declared `version` runs in
+place of the shipped detection; hashing declared identity would return the
+unchanged value for exactly that substitution. Sorting by id rather than path
+keeps two endpoints running the same catalog comparable. When operator rules
+replace built-in ids, the run also emits a `warn` diagnostic naming them.
+
+The digest attests **which rules were loaded**, nothing more. It does not show
+that auspex was invoked, that the hook is still wired, or that a decision was
+enforced — anyone able to drop in a `--rules-dir` can equally unwire the hook.
+The key is absent when no catalog was resolved for that record: an event-only
+run never compiles an engine, and a diagnostic may be written before rules are
+loaded. Absence is "not asked", never "nothing found".
+
+These schemas are amended in place with additive optional fields, which
+[CONTRIBUTING.md](../../../CONTRIBUTING.md) does not treat as breaking. Because
+every record schema sets `additionalProperties: false`, a receiver validating
+against a *pinned* copy of a v0.2.0 schema will reject records carrying fields
+added after that copy was taken. Re-fetch this directory rather than pinning a
+snapshot, or relax `additionalProperties` on your side.
+
 The schemas describe the emitted wire shape. They do not change runtime
 behavior. They keep auspex's flat [event model](../../event-model.md): rules
 evaluate the same field names that records emit.

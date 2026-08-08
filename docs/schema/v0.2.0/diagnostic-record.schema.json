@@ -16,6 +16,11 @@
     "schema_version": { "const": "0.2.0" },
     "record_type": { "const": "diagnostic" },
     "run_id": { "type": "string", "minLength": 1 },
+    "ruleset_digest": {
+      "description": "Attestation of the rule catalog this run compiled: a sha256 fold of every loaded rule file's raw bytes, keyed by rule id, so two endpoints running an identical catalog report an identical value and a stub rule reusing a built-in's id and version does not. Absent when no catalog was resolved for this record: an event-only run never builds an engine, and a diagnostic may be written before rules are loaded. It attests which rules were loaded, not that Auspex was invoked at all.",
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
     "endpoint": { "$ref": "#/$defs/endpoint" },
     "timestamp": { "type": "string" },
     "level": { "type": "string", "enum": ["info", "warn", "error"] },

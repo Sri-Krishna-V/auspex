@@ -246,6 +246,20 @@ auspex writes typed NDJSON streams. Each record carries a `record_type` (`event`
 `endpoint.device_id` for fleet joins.
 `enforcement` is hook-only; `scan_summary` is scan-only.
 
+A record also carries `ruleset_digest` whenever the run resolved a rule
+catalog: `sha256:` plus a fold of every loaded rule file's raw bytes, keyed by
+rule id. Two endpoints running the same catalog report the same value, so a
+receiver can group a fleet by the rules that actually ran instead of trusting
+that they match. It is byte-sensitive by design — a `--rules-dir` stub that
+keeps a built-in's id and declared `version` but neuters its expression changes
+the digest — and it is sorted by rule id, not path, so a different local rules
+directory does not. The key is absent when no catalog was resolved for that
+record (an `--emit events` run compiles no engine, and a diagnostic may be
+written before rules load); absence means "not asked", not "nothing found".
+The digest attests which rules were loaded and nothing else: it cannot show
+that auspex was invoked, that a hook is still wired, or that a decision was
+enforced.
+
 Event and finding value fields are redacted before emission. This includes
 credential query parameters, URL userinfo passwords, Basic/Bearer authorization
 values, secret-like assignments, and self-identifying token formats.

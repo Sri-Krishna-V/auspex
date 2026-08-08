@@ -568,6 +568,16 @@ with the same ID and `enabled: false` disables the built-in. Disabled rules are
 validated but absent from `rules list`, which prints the effective compiled
 catalog.
 
+Replacing a built-in is reported, not silent. Each run emits a `warn`
+diagnostic naming every replaced ID, and every record carries a
+`ruleset_digest` attesting the catalog that ran — a `sha256:` fold of each
+loaded rule file's raw bytes, keyed by rule ID. Because it hashes bytes rather
+than declared identity, a stub that reuses a built-in's ID and `version` while
+neutering its `expr` produces a different digest instead of an
+indistinguishable one. Because it sorts by ID rather than path, endpoints
+loading the same catalog from different directories agree. See
+[the record stream](cli.md#the-record-stream) for the full contract.
+
 For fleet policy, deploy a versioned operator directory separately from the
 binary. Installed hook callbacks reload it on each invocation; a running
 `collect` process must restart after a change. Keep policy files outside agent
