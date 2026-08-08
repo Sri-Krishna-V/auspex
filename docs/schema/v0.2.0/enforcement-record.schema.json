@@ -95,7 +95,13 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "deny_rule_id": { "type": "string", "minLength": 1 },
-    "deny_rule_version": { "type": "string", "minLength": 1 }
+    "deny_rule_version": { "type": "string", "minLength": 1 },
+    "withheld_rule_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Rule that would have denied, when a fail-open withdrew the decision because a finding failed to emit. Present only on no_override with fail_open. This record shares the sink whose failure caused the withdrawal, so a durably broken sink loses it as well; absence is not evidence that no block was withheld."
+    },
+    "withheld_rule_version": { "type": "string", "minLength": 1 }
   },
   "allOf": [
     {
@@ -143,6 +149,21 @@
             { "required": ["deny_rule_version"] }
           ]
         }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          { "required": ["withheld_rule_id"] },
+          { "required": ["withheld_rule_version"] }
+        ]
+      },
+      "then": {
+        "properties": {
+          "decision": { "const": "no_override" },
+          "reason": { "const": "fail_open" }
+        },
+        "required": ["decision", "reason", "withheld_rule_id", "withheld_rule_version"]
       }
     }
   ],

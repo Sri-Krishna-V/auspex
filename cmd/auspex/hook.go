@@ -472,6 +472,10 @@ func hookEnforcementDecision(run string, opts hookOptions, dec *pipeline.Enforce
 		switch {
 		case processErr != nil || recordErrors > 0 || dec.Tainted || dec.ObserveOnly:
 			decision.Reason = model.EnforcementReasonFailOpen
+			// Set only by the pipeline's taint path; the other fail-open causes
+			// leave these empty and omitempty drops them.
+			decision.WithheldRuleID = dec.WithheldRuleID
+			decision.WithheldRuleVersion = dec.WithheldRuleVersion
 		case dec.Blocked:
 			decision.Decision = model.EnforcementDecisionDeny
 			decision.Reason = model.EnforcementReasonEnforceRuleMatch

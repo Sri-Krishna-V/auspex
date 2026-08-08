@@ -120,6 +120,15 @@ rule when applicable. The record is written in the existing operator batch
 before the control response; it does not prove response delivery or host
 behavior.
 
+When the [clean-decision gate](#clean-decision-gate) withdraws a deny because a
+finding failed to emit, the resulting `fail_open` record carries
+`withheld_rule_id` and `withheld_rule_version`, so a suppressed block is
+auditable rather than silent. The fields are absent for the other fail-open
+causes, where no rule was eligible to begin with. Note the limit: this record is
+written to the same sink whose failure withdrew the decision, so a durably
+broken sink loses it too. Their absence is not evidence that no block was
+withheld.
+
 ## Deny reason and operator output
 
 The default deny reason is:

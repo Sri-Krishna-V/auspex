@@ -78,15 +78,20 @@ type EnforceDecision struct {
 	RuleIDs         []string
 	DenyRuleID      string
 	DenyRuleVersion string
-	CaseID          string
-	SourceAgent     string
-	SourceType      string
-	SessionID       string
-	Model           string
-	ModelProvider   string
-	SubAgent        string
-	ToolName        string
-	ToolCallID      string
+	// WithheldRuleID names the rule that would have denied had the run stayed
+	// clean. It is set only when a taint withdraws the decision, so a fail-open
+	// is auditable rather than silent.
+	WithheldRuleID      string
+	WithheldRuleVersion string
+	CaseID              string
+	SourceAgent         string
+	SourceType          string
+	SessionID           string
+	Model               string
+	ModelProvider       string
+	SubAgent            string
+	ToolName            string
+	ToolCallID          string
 }
 
 // WithEnforce attaches the live hook's enforcement accumulator. Monitor mode
@@ -204,6 +209,21 @@ func (p *Pipeline) Process(ev model.Event, source string) error {
 		// setting Blocked.
 		if p.enforce != nil {
 			if !clean {
+				// A finding failed to emit, so a deny is unsafe. Preserve the identity
+				// of the rule that would have blocked: one already promoted on an
+				// earlier event of this payload, else this event's first eligible
+				// match. First write wins, mirroring the taint itself — a later event
+				// can neither restore a deny nor overwrite the earlier withheld rule.
+				if p.enforce.WithheldRuleID == "" {
+					switch {
+					case p.enforce.DenyRuleID != "":
+						p.enforce.WithheldRuleID = p.enforce.DenyRuleID
+						p.enforce.WithheldRuleVersion = p.enforce.DenyRuleVersion
+					case firstEligible != nil:
+						p.enforce.WithheldRuleID = firstEligible.ID
+						p.enforce.WithheldRuleVersion = firstEligible.Version
+					}
+				}
 				p.enforce.Tainted = true
 				p.enforce.Blocked = false
 				p.enforce.Reason = ""
