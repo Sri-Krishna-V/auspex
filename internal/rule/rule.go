@@ -176,6 +176,12 @@ type Source struct {
 	// Path is the origin path the rule was loaded from, set by the loader and
 	// never decoded from YAML. It disambiguates duplicate-id diagnostics.
 	Path string
+	// Digest is the hex SHA-256 of the rule file's raw bytes, set by the loader
+	// and never decoded from YAML. It is empty for sources constructed in memory.
+	// The hash covers bytes rather than decoded fields on purpose: a stub rule
+	// that keeps a built-in's id and version but neuters its expression must not
+	// be able to reproduce the original digest.
+	Digest string
 }
 
 // Match is the in-memory result of a rule firing against an event, before it

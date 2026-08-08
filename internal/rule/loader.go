@@ -2,6 +2,8 @@ package rule
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -40,9 +42,11 @@ func LoadSource(reader io.Reader, name string) (Source, error) {
 	if err := validateRuleVersion(rule, name); err != nil {
 		return Source{}, err
 	}
+	sum := sha256.Sum256(data)
 	return Source{
-		Name:  strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)),
-		Rules: []Rule{rule},
+		Name:   strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)),
+		Rules:  []Rule{rule},
+		Digest: hex.EncodeToString(sum[:]),
 	}, nil
 }
 

@@ -1,6 +1,8 @@
 package rule
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -207,5 +209,81 @@ func TestLoadSourceAtSizeLimitDecodes(t *testing.T) {
 	}
 	if p.Name != "ok" {
 		t.Fatalf("name = %q", p.Name)
+	}
+}
+
+// TestLoadSourceRecordsFileDigest pins the property the ruleset digest depends
+// on: the hash covers the file's raw bytes, so a stub rule that keeps a
+// built-in's id and version but neuters its expression cannot reproduce the
+// original digest. Hashing decoded identity instead would let exactly that
+// substitution pass unnoticed.
+func TestLoadSourceRecordsFileDigest(t *testing.T) {
+	const real = `id: secrets.a
+version: "1.0"
+title: A
+severity: high
+expr: 'event.command.contains(".env")'
+`
+	// Same id, same author-declared version, expression neutered.
+	const stub = `id: secrets.a
+version: "1.0"
+title: A
+severity: high
+expr: 'false'
+`
+	got, err := LoadSource(strings.NewReader(real), "a.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Digest) != 64 {
+		t.Fatalf("digest = %q, want 64 hex characters", got.Digest)
+	}
+	sum := sha256.Sum256([]byte(real))
+	if got.Digest != hex.EncodeToString(sum[:]) {
+		t.Fatalf("digest = %q, want the sha256 of the file's raw bytes", got.Digest)
+	}
+
+	neutered, err := LoadSource(strings.NewReader(stub), "a.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if neutered.Digest == got.Digest {
+		t.Fatal("a rule keeping the same id and version but a different expression reproduced the original digest")
+	}
+
+	// Identical bytes under a different file name must still agree, so the
+	// digest describes the rule and not the operator's local directory layout.
+	same, err := LoadSource(strings.NewReader(real), "elsewhere/renamed.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same.Digest != got.Digest {
+		t.Fatalf("digest depends on file name: %q vs %q", same.Digest, got.Digest)
+	}
+}
+
+// TestLoadSourcesFSPropagatesDigest guards the seam where LoadSourcesFS sets
+// Path on the struct LoadSource returned: a future rebuild of that struct would
+// silently drop the digest and empty every endpoint's ruleset attestation.
+func TestLoadSourcesFSPropagatesDigest(t *testing.T) {
+	const y = `id: secrets.a
+version: "1.0"
+title: A
+severity: high
+expr: 'true'
+`
+	sources, err := LoadSourcesFS(fstest.MapFS{"d/a.yaml": &fstest.MapFile{Data: []byte(y)}}, "d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 {
+		t.Fatalf("sources = %d, want 1", len(sources))
+	}
+	sum := sha256.Sum256([]byte(y))
+	if sources[0].Digest != hex.EncodeToString(sum[:]) {
+		t.Fatalf("digest = %q, want it preserved through LoadSourcesFS", sources[0].Digest)
+	}
+	if sources[0].Path != "d/a.yaml" {
+		t.Fatalf("path = %q, want d/a.yaml", sources[0].Path)
 	}
 }
