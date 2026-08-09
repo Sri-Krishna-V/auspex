@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="410" viewBox="0 0 1200 410"
+     role="img" aria-labelledby="hoTitle hoDesc">
+  <title id="hoTitle">From the record stream to a verifiable handoff</title>
+  <desc id="hoDesc">One NDJSON record file at schema v0.2.0 feeds three consumers. auspex ship batches it to HTTP and advances its state only on a 2xx, making delivery at-least-once across outages. auspex timeline replays it chronologically and evaluates no rules. auspex case build collects a case's findings, the events they cite, and a SHA-256 manifest, which auspex case verify re-hashes file by file.</desc>
+
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="410" rx="20" fill="#0B0D0F"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="408.5" rx="19.25" fill="none" stroke="#1D242B"/>
+
+  <text class="mono" x="60" y="44" font-size="17" letter-spacing="2.6" fill="#5E6872">EVERY RECORD KEEPS ITS PATH BACK TO THE ARTIFACT IT CAME FROM</text>
+
+  <g id="source">
+    <rect x="60" y="118" width="240" height="100" rx="14" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="84" y="154" font-size="20" fill="#E9EDF1">records.ndjson</text>
+    <text class="mono" x="84" y="180" font-size="18" fill="#79848F">schema v0.2.0</text>
+    <text class="mono" x="84" y="204" font-size="18" fill="#79848F">6 record types</text>
+  </g>
+
+  <g id="links" stroke="#4E5862" stroke-width="1.5" fill="none">
+    <path d="M300 168 H336"/>
+    <path d="M336 106 V276"/>
+    <path d="M336 106 H360"/>
+    <path d="M336 190 H360"/>
+    <path d="M336 276 H360"/>
+    <path d="M510 306 V326"/>
+  </g>
+  <path d="M360 100 L360 112 L372 106 Z" fill="#4E5862"/>
+  <path d="M360 184 L360 196 L372 190 Z" fill="#4E5862"/>
+  <path d="M360 270 L360 282 L372 276 Z" fill="#4E5862"/>
+  <path d="M504 326 L516 326 L510 338 Z" fill="#4E5862"/>
+
+  <g id="consumers">
+    <rect x="380" y="78" width="260" height="56" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="404" y="114" font-size="20" fill="#E9EDF1">auspex ship</text>
+    <text class="mono" x="670" y="114" font-size="19" fill="#79848F">batches to HTTP, advances only on 2xx</text>
+
+    <rect x="380" y="162" width="260" height="56" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="404" y="198" font-size="20" fill="#E9EDF1">auspex timeline</text>
+    <text class="mono" x="670" y="198" font-size="19" fill="#79848F">chronological replay, no rules run</text>
+
+    <rect x="380" y="248" width="260" height="56" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="404" y="284" font-size="20" fill="#E9EDF1">auspex case build</text>
+    <text class="mono" x="670" y="284" font-size="19" fill="#79848F">findings, cited events, SHA-256 manifest</text>
+
+    <rect x="380" y="338" width="260" height="56" rx="12" fill="#0F1418" stroke="#3B4650"/>
+    <text class="mono" x="404" y="374" font-size="20" fill="#E9EDF1">auspex case verify</text>
+    <text class="mono" x="670" y="374" font-size="19" fill="#79848F">re-hashes every file in the bundle</text>
+  </g>
+</svg>

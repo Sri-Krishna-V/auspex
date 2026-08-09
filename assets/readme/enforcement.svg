@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="330" viewBox="0 0 1200 330"
+     role="img" aria-labelledby="enfTitle enfDesc">
+  <title id="enfTitle">How auspex authorizes a deny</title>
+  <desc id="enfDesc">A rule match only becomes a deny when two further conditions hold: the matched rule sets enforce true and the hook runs in enforce mode, and every record for that run emitted successfully. Monitor mode or a detection-only rule falls through to no override. A record that failed to emit taints the decision and permanently suppresses the deny, also falling through to no override. In every no-override case the host's normal permission flow continues.</desc>
+
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="330" rx="20" fill="#0B0D0F"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="328.5" rx="19.25" fill="none" stroke="#1D242B"/>
+
+  <text class="mono" x="60" y="50" font-size="17" letter-spacing="2.6" fill="#5E6872">A DENY MUST NEVER OUTRUN ITS OPERATOR RECORD</text>
+
+  <g id="chain">
+    <rect x="60" y="88" width="228" height="64" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="84" y="127" font-size="21" fill="#E9EDF1">rule matched</text>
+
+    <rect x="320" y="88" width="268" height="64" rx="12" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="344" y="127" font-size="21" fill="#E9EDF1">enforce: true ?</text>
+
+    <rect x="620" y="88" width="268" height="64" rx="12" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="644" y="127" font-size="21" fill="#E9EDF1">run stayed clean ?</text>
+
+    <rect x="920" y="88" width="220" height="64" rx="12" fill="#170F0E" stroke="#D9574F"/>
+    <text class="mono" x="944" y="118" font-size="21" fill="#D9574F">deny</text>
+    <text class="mono" x="944" y="140" font-size="17" fill="#9A6A66">host refuses</text>
+  </g>
+
+  <g id="yes-arrows" stroke="#4E5862" stroke-width="1.5" fill="none">
+    <path d="M288 120 H308"/>
+    <path d="M588 120 H608"/>
+    <path d="M888 120 H908"/>
+  </g>
+  <path d="M308 114 L308 126 L320 120 Z" fill="#4E5862"/>
+  <path d="M608 114 L608 126 L620 120 Z" fill="#4E5862"/>
+  <path d="M908 114 L908 126 L920 120 Z" fill="#4E5862"/>
+  <text class="mono" x="598" y="82" font-size="17" fill="#79848F" text-anchor="middle">yes</text>
+  <text class="mono" x="898" y="82" font-size="17" fill="#79848F" text-anchor="middle">yes</text>
+
+  <g id="fallthrough" stroke="#4E5862" stroke-width="1.5" stroke-dasharray="5 4" fill="none">
+    <path d="M454 152 V230"/>
+    <path d="M754 152 V230"/>
+  </g>
+  <path d="M448 230 L460 230 L454 242 Z" fill="#4E5862"/>
+  <path d="M748 230 L760 230 L754 242 Z" fill="#4E5862"/>
+
+  <text class="mono" x="474" y="186" font-size="17" fill="#79848F">monitor mode</text>
+  <text class="mono" x="474" y="208" font-size="17" fill="#79848F">detection-only rule</text>
+  <text class="mono" x="774" y="186" font-size="17" fill="#E3A84C">a record failed</text>
+  <text class="mono" x="774" y="208" font-size="17" fill="#E3A84C">to emit, tainted</text>
+
+  <rect x="60" y="242" width="1080" height="60" rx="12" fill="#0F1418" stroke="#2A333B"/>
+  <text class="mono" x="88" y="279" font-size="20" fill="#E9EDF1">no override</text>
+  <text class="mono" x="248" y="279" font-size="20" fill="#79848F">the host&#39;s normal permission flow continues, and the run stays auditable</text>
+</svg>

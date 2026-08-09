@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="530" viewBox="0 0 1200 530"
+     role="img" aria-labelledby="clsTitle clsDesc">
+  <title id="clsTitle">How auspex types an action</title>
+  <desc id="clsDesc">A tool request arrives from a hook, an OTLP record, or an on-disk artifact. auspex first asks whether the tool name and argument shape are verified for that source; if not, the request becomes tool.call. If they are, it asks what the structured argument shape supports: a shell or process request becomes command.exec, a file access or change becomes file.read, file.write, or file.delete, a known network call becomes network.indicator, and anything ambiguous stays tool.call. tool.call is a deliberate fallback, never a guess.</desc>
+
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="530" rx="20" fill="#0B0D0F"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="528.5" rx="19.25" fill="none" stroke="#1D242B"/>
+
+  <text class="mono" x="60" y="46" font-size="17" letter-spacing="2.6" fill="#5E6872">A NARROW CLASSIFIER THAT NEVER INFERS INTENT FROM PROSE</text>
+
+  <g id="input">
+    <text class="mono" x="60" y="256" font-size="20" fill="#E9EDF1">tool request</text>
+    <text class="mono" x="60" y="284" font-size="18" fill="#79848F">hook · OTLP · artifact</text>
+  </g>
+
+  <g id="q1">
+    <rect x="300" y="213" width="260" height="100" rx="14" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="324" y="248" font-size="20" fill="#E9EDF1">tool name and</text>
+    <text class="mono" x="324" y="276" font-size="20" fill="#E9EDF1">argument shape</text>
+    <text class="mono" x="324" y="304" font-size="20" fill="#E9EDF1">verified?</text>
+  </g>
+
+  <g id="q2">
+    <rect x="600" y="213" width="260" height="100" rx="14" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="624" y="248" font-size="20" fill="#E9EDF1">what does the</text>
+    <text class="mono" x="624" y="276" font-size="20" fill="#E9EDF1">structured shape</text>
+    <text class="mono" x="624" y="304" font-size="20" fill="#E9EDF1">support?</text>
+  </g>
+
+  <g id="links" stroke="#4E5862" stroke-width="1.5" fill="none">
+    <path d="M244 263 H292"/>
+    <path d="M560 263 H592"/>
+    <path d="M860 263 H882"/>
+    <path d="M882 110 V416"/>
+    <path d="M882 110 H902"/>
+    <path d="M882 214 H902"/>
+    <path d="M882 318 H902"/>
+    <path d="M882 416 H902"/>
+  </g>
+  <path d="M292 257 L292 269 L304 263 Z" fill="#4E5862"/>
+  <path d="M592 257 L592 269 L604 263 Z" fill="#4E5862"/>
+  <path d="M902 104 L902 116 L914 110 Z" fill="#4E5862"/>
+  <path d="M902 208 L902 220 L914 214 Z" fill="#4E5862"/>
+  <path d="M902 312 L902 324 L914 318 Z" fill="#4E5862"/>
+  <path d="M902 410 L902 422 L914 416 Z" fill="#4E5862"/>
+  <text class="mono" x="576" y="250" font-size="17" fill="#79848F" text-anchor="middle">yes</text>
+
+  <g id="fallback-route" stroke="#79848F" stroke-width="1.5" stroke-dasharray="5 4" fill="none">
+    <path d="M430 313 V492 H1010 V474"/>
+  </g>
+  <path d="M1004 474 L1016 474 L1010 462 Z" fill="#79848F"/>
+  <text class="mono" x="446" y="352" font-size="17" fill="#79848F">no</text>
+  <text class="mono" x="470" y="484" font-size="17" fill="#79848F">unverified tool or shape: keep visible, do not guess</text>
+
+  <g id="outcomes">
+    <rect x="918" y="72" width="222" height="76" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="940" y="106" font-size="20" fill="#C7CFD7">command.exec</text>
+    <text class="mono" x="940" y="131" font-size="17" fill="#79848F">shell or process</text>
+
+    <rect x="918" y="164" width="222" height="100" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="940" y="198" font-size="20" fill="#C7CFD7">file.read · write</text>
+    <text class="mono" x="940" y="224" font-size="20" fill="#C7CFD7">file.delete</text>
+    <text class="mono" x="940" y="249" font-size="17" fill="#79848F">access or change</text>
+
+    <rect x="918" y="280" width="222" height="76" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="940" y="314" font-size="20" fill="#C7CFD7">network.indicator</text>
+    <text class="mono" x="940" y="339" font-size="17" fill="#79848F">known network call</text>
+
+    <rect x="918" y="372" width="222" height="88" rx="12" fill="#12130F" stroke="#4E5862"/>
+    <text class="mono" x="940" y="406" font-size="20" fill="#E9EDF1">tool.call</text>
+    <text class="mono" x="940" y="431" font-size="17" fill="#79848F">the fallback, never</text>
+    <text class="mono" x="940" y="450" font-size="17" fill="#79848F">a guess</text>
+  </g>
+</svg>
