@@ -325,3 +325,57 @@ func TestValidateAcceptsEmptyOptionalVocabulary(t *testing.T) {
 		t.Errorf("event with valid actor and decision should pass: %v", err)
 	}
 }
+
+// The opacity score is a count of the reasons printed beside it, so the two can
+// never disagree on the wire. A score without its reasons, or reasons without
+// their score, is a claim the record cannot support.
+func TestValidateRejectsOpacityScoreDisagreeingWithReasons(t *testing.T) {
+	zero, two := 0, 2
+	cases := []struct {
+		name string
+		ev   Event
+	}{
+		{"score higher than reasons", validEvent(Event{EventID: "x", EventType: EventCommandExec, Command: "ls", OpacityScore: &two, OpacityReasons: []string{OpacityDetached}})},
+		{"score lower than reasons", validEvent(Event{EventID: "x", EventType: EventCommandExec, Command: "ls", OpacityScore: &zero, OpacityReasons: []string{OpacityDetached}})},
+		{"reasons without a score", validEvent(Event{EventID: "x", EventType: EventCommandExec, Command: "ls", OpacityReasons: []string{OpacityDetached}})},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.ev.Validate()
+			if err == nil {
+				t.Fatalf("expected Validate to reject %s", c.name)
+			}
+			if !strings.Contains(err.Error(), "opacity") {
+				t.Errorf("error should name the opacity contract: %v", err)
+			}
+		})
+	}
+
+	// A score of 0 with no reasons is the honest "parsed it, saw everything"
+	// claim and must stay valid; absence of both is the unanalyzed command.
+	for _, ev := range []Event{
+		validEvent(Event{EventID: "a", EventType: EventCommandExec, Command: "ls", OpacityScore: &zero}),
+		validEvent(Event{EventID: "b", EventType: EventCommandExec, Command: "ls"}),
+	} {
+		if err := ev.Validate(); err != nil {
+			t.Errorf("event %s should pass: %v", ev.EventID, err)
+		}
+	}
+}
+
+// Reasons are a closed vocabulary. An unrecognized marker would reach receivers
+// as an unroutable string and would fail the published schema's enum.
+func TestValidateRejectsUnknownOpacityReason(t *testing.T) {
+	one := 1
+	ev := validEvent(Event{EventID: "x", EventType: EventCommandExec, Command: "ls", OpacityScore: &one, OpacityReasons: []string{"obfuscated"}})
+	err := ev.Validate()
+	if err == nil {
+		t.Fatalf("expected Validate to reject an unknown opacity reason")
+	}
+	if !strings.Contains(err.Error(), "obfuscated") {
+		t.Errorf("error should name the offending reason: %v", err)
+	}
+	if !IsValidOpacityReason(OpacityPipedToInterpreter) || IsValidOpacityReason("obfuscated") || IsValidOpacityReason("") {
+		t.Errorf("IsValidOpacityReason wrong")
+	}
+}

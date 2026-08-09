@@ -97,6 +97,43 @@ becomes:
 {"event_type":"network.indicator","tool_name":"mcp__fetch__fetch","tool_call_id":"call_1","mcp_server":"fetch","mcp_tool":"fetch","url":"https://example.com/a"}
 ```
 
+## Opacity
+
+Command events carry `opacity_score`, a count of the reasons the command's
+effect could not be read from its text, and `opacity_reasons`, the markers that
+were counted. The score is always the length of the array, so an aggregate can
+use either alone. Five markers exist, each worth 1:
+
+| Marker | Meaning |
+| --- | --- |
+| `detached` | `nohup`, `setsid`, or `disown` outlives the observed session |
+| `dynamic_argument` | an argument or redirect target resolves only at runtime |
+| `encoded_payload` | a decoder (`base64`, `xxd`, `uudecode`, `base32`, `openssl enc`, `certutil -decode`) produces bytes never present in the command |
+| `inline_interpreter` | an interpreter takes its program from the argv (`bash -c`, `perl -e`, `pwsh -EncodedCommand`, `cmd /c`) |
+| `piped_to_interpreter` | an interpreter executes a program delivered on its standard input |
+
+Reasons are reported in that fixed order, so two endpoints observing the same
+command emit an identical array.
+
+POSIX shell, PowerShell, and `cmd.exe` commands are all analyzed — the markers
+are derived from the same parse that backs `shell_commands`, not from a
+dialect-specific pass.
+
+**A score of 0 is a claim; an absent score is not.** `0` means auspex parsed the
+command and saw everything it does. Absence means auspex did not look or could
+not read it — the event carries no command, or the command was unparseable, over
+the analyzer's size limit, or in a dialect it cannot project. A command auspex
+could not read is left **unscored**, never scored 0, because reporting 0 there
+would assert a completeness auspex cannot support. Consumers must treat the two
+as different states.
+
+The score measures how much of the action is hidden from a static reader, not
+how dangerous it is. `bash -c "echo hi"` scores 1. The marker set is a fixed
+list of known wrapping techniques, not a proof of transparency: a 0 means none
+of these five were seen, not that no concealment exists. Nothing in the shipped
+catalog matches on it; the field is exposed to CEL as `event.opacity_score` and
+`event.opacity_reasons` so operators can write their own thresholds.
+
 ## Contracts
 
 The event vocabulary and allowed field combinations are closed and validated

@@ -112,6 +112,38 @@ const (
 	ConfidenceLow    = "low"
 )
 
+// Opacity markers name why a command's effect cannot be read from the command
+// text alone. Each is worth 1 point of OpacityScore. The set is closed, so the
+// score has a structural ceiling of OpacityReasonCount and needs no cap.
+const (
+	// OpacityDetached — the action outlives the session that started it.
+	OpacityDetached = "detached"
+	// OpacityDynamicArgument — an argument or redirect target resolves to a
+	// value only at runtime, so the observed argv is not the executed argv.
+	OpacityDynamicArgument = "dynamic_argument"
+	// OpacityEncodedPayload — a decoder appears in the command, so the bytes it
+	// produces were never in the command text.
+	OpacityEncodedPayload = "encoded_payload"
+	// OpacityInlineInterpreter — an interpreter takes its program from the argv
+	// rather than a file on disk.
+	OpacityInlineInterpreter = "inline_interpreter"
+	// OpacityPipedToInterpreter — an interpreter executes a program delivered on
+	// its standard input, which auspex never sees.
+	OpacityPipedToInterpreter = "piped_to_interpreter"
+)
+
+var opacityReasons = map[string]struct{}{
+	OpacityDetached: {}, OpacityDynamicArgument: {}, OpacityEncodedPayload: {},
+	OpacityInlineInterpreter: {}, OpacityPipedToInterpreter: {},
+}
+
+// OpacityReasonCount is the size of the closed marker set, and therefore the
+// largest OpacityScore that can be emitted.
+const OpacityReasonCount = 5
+
+// IsValidOpacityReason reports whether r is a recognized opacity marker.
+func IsValidOpacityReason(r string) bool { _, ok := opacityReasons[r]; return ok }
+
 // Shared parser tags live here; source-specific tags stay with their parser.
 const (
 	// TagNetwork marks structured network egress.
@@ -262,6 +294,18 @@ type Event struct {
 	// DurationMs is optional so a recorded 0ms differs from absence.
 	DurationMs *int64 `json:"duration_ms,omitempty"`
 
+	// OpacityScore counts how many reasons the command's effect could not be read
+	// from Command alone; OpacityReasons names them. The score is always
+	// len(OpacityReasons), so the integer and the array can never disagree.
+	//
+	// The pointer carries the honesty boundary. A score of 0 is a positive claim
+	// — auspex parsed the command and saw everything it does. Absence means
+	// auspex never looked or could not read the command: the event carries none,
+	// or it was unparseable, oversize, or in an unprojectable dialect. Absent is
+	// not 0.
+	OpacityScore   *int     `json:"opacity_score,omitempty"`
+	OpacityReasons []string `json:"opacity_reasons,omitempty"`
+
 	// Approval fields retain a structured permission gate when the source records
 	// one. ApprovalRequired is optional so false differs from absence.
 	ApprovalRequired *bool  `json:"approval_required,omitempty"`
@@ -338,6 +382,8 @@ func (e Event) celView() map[string]any {
 		"tool_call_id":      e.ToolCallID,
 		"exit_code":         exitCodeView(e.ExitCode),
 		"duration_ms":       int64PtrView(e.DurationMs),
+		"opacity_score":     exitCodeView(e.OpacityScore),
+		"opacity_reasons":   toAnySlice(e.OpacityReasons),
 		"approval_required": boolPtrView(e.ApprovalRequired),
 		"approval_decision": e.ApprovalDecision,
 		"approval_reason":   e.ApprovalReason,
@@ -388,7 +434,8 @@ func IsCELField(name string) bool {
 // celView always includes the "exit_code" key, so a rule tests presence with
 // `event.exit_code != null` (NOT has(event.exit_code) — cel-go has() checks key
 // presence, which is always true here); `event.exit_code == 0` then matches a
-// real clean exit and never an absent code.
+// real clean exit and never an absent code. It also projects opacity_score, the
+// other optional int whose 0 is a positive claim rather than a default.
 func exitCodeView(code *int) any {
 	if code == nil {
 		return nil

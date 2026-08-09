@@ -133,6 +133,19 @@ func New(engine *rule.Engine, emit *output.Emitter, sel Selection, fopts finding
 // is rejected before emission or evaluation and returned to the sensor.
 func (p *Pipeline) Process(ev model.Event, source string) error {
 	ev = ev.NormalizePaths()
+	// Process is the only production EmitEvent caller, so scoring here is what
+	// makes an unscored command event unreachable. Stamping before Validate puts
+	// the derived fields under the same contract as everything else emitted.
+	// An unanalyzable command is left absent rather than scored 0; see
+	// rule.Opacity.
+	//
+	// ponytail: re-parses the command a shell_commands rule will parse again;
+	// share the analysis through the activation if command-heavy scans get slow.
+	if reasons, analyzed := rule.Opacity(ev); analyzed {
+		score := len(reasons)
+		ev.OpacityScore = &score
+		ev.OpacityReasons = reasons
+	}
 	if err := ev.Validate(); err != nil {
 		return fmt.Errorf("invalid %q event %s: %w", source, ev.EventID, err)
 	}

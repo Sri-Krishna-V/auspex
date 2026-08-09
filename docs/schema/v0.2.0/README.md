@@ -34,6 +34,21 @@ The key is absent when no catalog was resolved for that record: an event-only
 run never compiles an engine, and a diagnostic may be written before rules are
 loaded. Absence is "not asked", never "nothing found".
 
+An `event` line derived from a command also carries `opacity_score` and
+`opacity_reasons`: how many reasons the command's effect could not be read from
+its text, and which markers were counted, in a fixed canonical order. The score
+is always the length of the array, and the marker vocabulary is closed at five,
+so it ranges 0–5.
+
+`opacity_score: 0` is a positive claim that auspex parsed the command and saw
+everything it does. Both keys are **absent** when auspex did not look or could
+not read the command — the event carries none, or the command was unparseable,
+over the analyzer's size limit, or in a dialect it cannot project. Absence is
+never 0,
+and a receiver that coerces a missing key to 0 turns "unread" into "fully
+transparent". The schema types `opacity_score` as a plain `integer` rather than
+`["integer","null"]` for that reason: the field is omitted, never nulled.
+
 These schemas are amended in place with additive optional fields, which
 [CONTRIBUTING.md](../../../CONTRIBUTING.md) does not treat as breaking. Because
 every record schema sets `additionalProperties: false`, a receiver validating

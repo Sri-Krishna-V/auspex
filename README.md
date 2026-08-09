@@ -242,6 +242,8 @@ flowchart TD
 
 These types are alternatives, not layers — a recognized shell request becomes `command.exec`, not an additional `tool.call`. The `tool.call` fallback exists to preserve visibility when a safe specific mapping is unavailable, rather than guessing. A `confidence` field records how directly the source supported the mapping.
 
+Command events also carry an `opacity_score` and the `opacity_reasons` behind it, so one layer of wrapping — `bash -c "base64 -d p | sh"` — reports as 3 rather than as a single opaque string. A score of `0` is a real claim that auspex parsed the command and saw everything it does; a command it could not read carries **no score at all**, because emitting `0` there would fabricate a completeness auspex never had. See the [event model](docs/event-model.md) for the marker list.
+
 ### 3. Detection — one pass per event, with a fail-safe decision channel
 
 Every sensor feeds `pipeline.Process`, which handles exactly one normalized event. Rule evaluation and enforcement authorization are deliberately decoupled: an unrelated rule erroring out does not invalidate a clean match, but any failure to *emit* a record does.

@@ -177,8 +177,8 @@ requested actions, or only `command.result` when completion matters.
 ### Event fields
 
 The CEL `event` map always contains every key below. `exit_code`, `duration_ms`,
-and `approval_required` use `null` when absent; strings use `""`, `diff_bytes`
-uses `0`, and `tags` uses an empty list.
+`opacity_score`, and `approval_required` use `null` when absent; strings use
+`""`, `diff_bytes` uses `0`, and `tags` and `opacity_reasons` use an empty list.
 
 | Field | Type | Field | Type |
 | --- | --- | --- | --- |
@@ -192,7 +192,8 @@ uses `0`, and `tags` uses an empty list.
 | `event.exit_code` | int|null | `event.file_path` | string |
 | `event.git_branch` | string | `event.mcp_server` | string |
 | `event.mcp_tool` | string | `event.model` | string |
-| `event.model_provider` | string | `event.project_path` | string |
+| `event.model_provider` | string | `event.opacity_reasons` | list(string) |
+| `event.opacity_score` | int|null | `event.project_path` | string |
 | `event.tags` | list(string) | `event.session_id` | string |
 | `event.source_agent` | string | `event.source_type` | string |
 | `event.sub_agent` | string | `event.timestamp` | string |
@@ -256,6 +257,47 @@ expr: |-
 
 `name` is the lowercase executable basename with common Windows executable
 suffixes removed. `argv` includes the executable at index 0.
+
+### Opacity
+
+`event.opacity_score` and `event.opacity_reasons` are derived from the same
+parse and, unlike `shell_commands`, are emitted on the event record. The score
+counts how many reasons the command's effect could not be read from its text;
+the reasons name them, always in this order:
+
+`detached`, `dynamic_argument`, `encoded_payload`, `inline_interpreter`,
+`piped_to_interpreter`.
+
+The score is always `size(event.opacity_reasons)`, and the marker set is closed
+at five, so it ranges 0–5 with no cap applied.
+
+```cel
+event.opacity_score != null && event.opacity_score >= 2
+```
+
+```cel
+"encoded_payload" in event.opacity_reasons
+```
+
+Test `event.opacity_score != null`, not `has(event.opacity_score)` — the key is
+always present in the CEL view, `null` when unset, exactly like `exit_code`.
+
+**`null` and `0` are different claims.** `0` means auspex parsed the command and
+saw everything it does. `null` means it never looked or could not read it: the
+event carries no command, or the command was unparseable, over the analyzer's
+size limit, or in a dialect it cannot project. Auspex leaves an unreadable
+command **unscored** rather than scoring it 0, because a 0 there would assert a
+completeness it cannot support. A rule written as `event.opacity_score == 0` to
+mean "safe" will therefore miss every command auspex could not read; that is an
+honest false negative, and the rule should test `!= null` first.
+
+POSIX shell, PowerShell, and `cmd.exe` commands are all analyzed — the markers
+come from the same parse that produces `shell_commands`.
+
+The score measures concealment, not danger — `bash -c "echo hi"` scores 1. It is
+also a fixed list of known wrapping techniques, not a proof of transparency: a 0
+means none of the five were seen, not that nothing is hidden. No built-in rule
+matches on it; the thresholds are the operator's to choose.
 
 ### Common patterns
 

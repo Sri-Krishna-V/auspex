@@ -260,6 +260,17 @@ The digest attests which rules were loaded and nothing else: it cannot show
 that auspex was invoked, that a hook is still wired, or that a decision was
 enforced.
 
+An `event` record derived from a command also carries `opacity_score` and
+`opacity_reasons`: how many reasons the command's effect could not be read from
+its text, and which. The score is always the length of the array. A `0` is a
+positive claim — auspex parsed the command and saw everything it does — so an
+unreadable command is left with **neither key** rather than scored 0. Absence
+means auspex did not look or could not read it: the event carries no command, or
+the command was unparseable, over the analyzer's size limit, or in a dialect it
+cannot project. Filtering on `opacity_score > 0` finds wrapped actions; finding
+the commands auspex never read means filtering on the key being absent. See the
+[event model](event-model.md) for the marker list.
+
 Event and finding value fields are redacted before emission. This includes
 credential query parameters, URL userinfo passwords, Basic/Bearer authorization
 values, secret-like assignments, and self-identifying token formats.
