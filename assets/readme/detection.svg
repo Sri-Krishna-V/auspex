@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480"
+     role="img" aria-labelledby="detTitle detDesc">
+  <title id="detTitle">What auspex does with one normalized event</title>
+  <desc id="detDesc">Every sensor feeds the same per-event core. A normalized event is checked against the contract first; a failure is rejected and returned to the sensor rather than detected on. A valid event is emitted as an event record, then evaluated: 51 CEL rules in 12 categories, 6 sequence chains held in a per-session window backed by a persisted store behind hooks, and an indicator accumulator folded across the run. Event records, findings, indicators, and diagnostics all leave as NDJSON, and a failure to emit any of them taints the run's enforcement decision.</desc>
+
+  <defs>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="480" rx="20" fill="#0B0D0F"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="478.5" rx="19.25" fill="none" stroke="#1D242B"/>
+
+  <text class="mono" x="60" y="44" font-size="17" letter-spacing="2.6" fill="#5E6872">ONE PASS PER EVENT, IDENTICAL FOR EVERY SENSOR</text>
+
+  <g id="reject">
+    <rect x="330" y="76" width="440" height="60" rx="12" fill="#170F0E" stroke="#7A3C39"/>
+    <text class="mono" x="356" y="113" font-size="20" fill="#D9574F">rejected, returned to the sensor</text>
+  </g>
+
+  <g id="row">
+    <rect x="60" y="192" width="230" height="76" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="84" y="224" font-size="20" fill="#E9EDF1">one normalized</text>
+    <text class="mono" x="84" y="250" font-size="20" fill="#E9EDF1">event</text>
+
+    <rect x="330" y="192" width="230" height="76" rx="12" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="354" y="224" font-size="20" fill="#E9EDF1">contract</text>
+    <text class="mono" x="354" y="250" font-size="20" fill="#E9EDF1">valid?</text>
+
+    <rect x="620" y="192" width="230" height="76" rx="12" fill="#11151A" stroke="#222A31"/>
+    <text class="mono" x="644" y="224" font-size="20" fill="#E9EDF1">emit event</text>
+    <text class="mono" x="644" y="250" font-size="20" fill="#E9EDF1">record</text>
+  </g>
+
+  <g id="evaluate">
+    <rect x="890" y="110" width="250" height="240" rx="14" fill="#11151A" stroke="#2A333B"/>
+    <text class="mono" x="914" y="146" font-size="20" fill="#E9EDF1">evaluate</text>
+    <line x1="914" y1="164" x2="1116" y2="164" stroke="#222A31"/>
+    <text class="mono" x="914" y="196" font-size="20" fill="#E3A84C">51 CEL rules</text>
+    <text class="mono" x="914" y="218" font-size="17" fill="#79848F">12 categories</text>
+    <text class="mono" x="914" y="256" font-size="20" fill="#C7CFD7">6 sequence chains</text>
+    <text class="mono" x="914" y="278" font-size="17" fill="#79848F">per-session window</text>
+    <text class="mono" x="914" y="316" font-size="20" fill="#C7CFD7">indicators</text>
+    <text class="mono" x="914" y="338" font-size="17" fill="#79848F">folded per run</text>
+  </g>
+
+  <g id="arrows" stroke="#4E5862" stroke-width="1.5" fill="none">
+    <path d="M290 230 H322"/>
+    <path d="M560 230 H612"/>
+    <path d="M850 230 H882"/>
+    <path d="M445 192 V148"/>
+    <path d="M735 268 V384"/>
+    <path d="M1015 350 V384"/>
+  </g>
+  <path d="M322 224 L322 236 L334 230 Z" fill="#4E5862"/>
+  <path d="M612 224 L612 236 L624 230 Z" fill="#4E5862"/>
+  <path d="M882 224 L882 236 L894 230 Z" fill="#4E5862"/>
+  <path d="M439 148 L451 148 L445 136 Z" fill="#D9574F"/>
+  <path d="M729 384 L741 384 L735 396 Z" fill="#4E5862"/>
+  <path d="M1009 384 L1021 384 L1015 396 Z" fill="#4E5862"/>
+  <text class="mono" x="460" y="172" font-size="17" fill="#D9574F">no</text>
+  <text class="mono" x="586" y="216" font-size="17" fill="#79848F" text-anchor="middle">yes</text>
+
+  <rect x="60" y="398" width="1080" height="56" rx="12" fill="#0F1418" stroke="#2A333B"/>
+  <text class="mono" x="88" y="433" font-size="20" fill="#E9EDF1">NDJSON out</text>
+  <text class="mono" x="248" y="433" font-size="20" fill="#79848F">event · finding · indicator · diagnostic</text>
+  <text class="mono" x="768" y="433" font-size="18" fill="#E3A84C">a failed emit taints the run</text>
+</svg>
