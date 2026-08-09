@@ -577,6 +577,14 @@ auspex scan
 auspex scan --agent codex
 ```
 
+`auspex agents` reports a `WIRED` column read from configuration and an
+`OBSERVED` column read from auspex's own execution record: the last time a hook
+callback actually ran for that agent on this machine. `never` means no hook
+execution was recorded here — not that the agent never ran, and not that
+nothing happened. Agents seen only by at-rest scanning never stamp the column,
+so `wired: yes` with `observed: never` is a normal reading for an agent that
+has not been used since the hook was installed.
+
 ### Monitor and enforce
 
 Install live monitoring for any agent with

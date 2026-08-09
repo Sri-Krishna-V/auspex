@@ -1,8 +1,8 @@
 // Package state owns auspex's local bbolt database: it opens the one shared
 // file (bolt's lock is exclusive, so a process holds exactly one handle).
 // Sibling packages that persist records in the same file — currently the hook's
-// sequence windows — take the underlying handle via Bolt and own only their
-// bucket.
+// sequence windows and the coverage ledger — take the underlying handle via
+// Bolt and own only their bucket.
 //
 // The store is local-only and holds no transcript content, only the
 // content-free state owned by sibling packages.
@@ -45,6 +45,22 @@ func Open(path string, timeout time.Duration) (*DB, error) {
 			_ = b.Close()
 			return nil, fmt.Errorf("state: chmod %q to 0600: %w", path, chmodErr)
 		}
+	}
+	return &DB{bolt: b}, nil
+}
+
+// OpenReadOnly opens an existing state database for reading. Unlike Open it
+// creates nothing — no directory, no file, no permission repair — and takes
+// bolt's shared lock rather than the exclusive one, so concurrent readers do
+// not exclude each other. A report command that only inspects local state uses
+// this so that running it cannot write to, or lock out, a live hook.
+func OpenReadOnly(path string, timeout time.Duration) (*DB, error) {
+	if path == "" {
+		return nil, fmt.Errorf("state: empty database path")
+	}
+	b, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: timeout, ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("state: open %q read-only: %w", path, err)
 	}
 	return &DB{bolt: b}, nil
 }

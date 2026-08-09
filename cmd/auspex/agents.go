@@ -6,16 +6,20 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/Sri-Krishna-V/auspex/internal/discover"
 	"github.com/Sri-Krishna-V/auspex/internal/extract"
 	"github.com/Sri-Krishna-V/auspex/internal/hook"
+	"github.com/Sri-Krishna-V/auspex/internal/ledger"
 	"github.com/Sri-Krishna-V/auspex/internal/model"
+	"github.com/Sri-Krishna-V/auspex/internal/state"
 )
 
 // agents.go implements `auspex agents`, a read-only inventory report for local
@@ -33,6 +37,21 @@ const (
 	hookModalityPlugin   = "plugin"
 	hookModalityForensic = "none"
 )
+
+// The two non-timestamp values of the OBSERVED column. "never" is a statement
+// about auspex's own execution record, not about the agent: see the caveat in
+// the command's usage text. "unknown" appears only when the coverage ledger
+// itself could not be read, so a read failure can never masquerade as "never".
+const (
+	observedNever   = "never"
+	observedUnknown = "unknown"
+)
+
+// agentsStateLockTimeout bounds the wait for the state database lock while
+// reading the coverage ledger. `auspex agents` is an interactive report with
+// nothing blocked behind it, so it waits far longer than the hook does before
+// degrading the column to "unknown".
+const agentsStateLockTimeout = time.Second
 
 // Output format names for --format, mirroring `auspex timeline` so the two
 // commands share one convention (text default, json for machine consumers).
@@ -398,6 +417,12 @@ type agentRow struct {
 	Hook      string `json:"hook"`
 	Wired     string `json:"wired"`
 	SetupHint string `json:"setup_hint"`
+	// Observed is the last time auspex's hook actually ran for this agent on
+	// this machine: an RFC3339 timestamp, "never" when no hook execution was
+	// recorded here, or "unknown" when the coverage ledger could not be read.
+	// It records auspex's own execution, not the agent's — see the OBSERVED
+	// caveat in the command's usage text before reading anything else into it.
+	Observed string `json:"observed"`
 	// AtRestScanIncomplete is true when the at-rest scan of the agent's known
 	// roots did not complete cleanly — a hard read error, or one or more subtrees
 	// skipped (unreadable dir, special file). It is the machine-readable companion
@@ -424,8 +449,12 @@ func runAgents(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "\nReport-only: scans this machine's known agent config dirs and at-rest roots.")
 		fmt.Fprintln(stderr, "By default it reports supported agents with local signals; --all prints")
 		fmt.Fprintln(stderr, "the full parser/live coverage matrix (config, artifacts, live mode, wired,")
-		fmt.Fprintln(stderr, "next step). WIRED means auspex-owned configuration is present.")
+		fmt.Fprintln(stderr, "observed, next step). WIRED means auspex-owned configuration is present.")
 		fmt.Fprintln(stderr, "It does not verify runtime activation.")
+		fmt.Fprintln(stderr, "OBSERVED is the last time auspex's hook actually ran for that agent on this")
+		fmt.Fprintln(stderr, "machine. \"never\" means no hook execution was recorded here — not that the")
+		fmt.Fprintln(stderr, "agent never ran, and not that nothing happened. Agents seen only by at-rest")
+		fmt.Fprintln(stderr, "scanning never stamp this column.")
 		fmt.Fprintln(stderr, "It installs nothing, writes nothing, and never executes an agent binary.")
 		fs.PrintDefaults()
 	}
@@ -472,29 +501,93 @@ func runAgents(args []string, stdout, stderr io.Writer) int {
 // agent's scan error never aborts the others: detect/at-rest/wired are each
 // resolved independently and a failure degrades that one cell to "—" or "no".
 func buildAgentRows(home string) []agentRow {
+	stamps, ledgerReadable := agentCoverage(home)
 	rows := make([]agentRow, 0, len(agentDescriptors))
 	for _, d := range agentDescriptors {
-		rows = append(rows, d.row(home))
+		rows = append(rows, d.row(home, stamps, ledgerReadable))
 	}
 	return rows
 }
 
 // row computes the report row for one descriptor from read-only on-disk signals.
-func (d agentDescriptor) row(home string) agentRow {
+func (d agentDescriptor) row(home string, stamps map[string]time.Time, ledgerReadable bool) agentRow {
 	detected := d.configPresent(home)
 	found, skipped, scanErr := d.artifactFound(home)
 	atRest, incomplete := d.atRestColumn(found, skipped, scanErr)
 	wired := d.wiredColumn(home)
+	observed := d.observedColumn(stamps, ledgerReadable)
 	return agentRow{
-		Agent:                d.display,
-		Present:              detected || found || incomplete || wired == "yes" || strings.HasPrefix(wired, "error"),
+		Agent: d.display,
+		// A recorded hook execution is itself a local signal — auspex demonstrably
+		// ran for this agent here — so it keeps the row in the default view even
+		// when config, artifacts, and wiring are all absent or unreadable.
+		Present:              detected || found || incomplete || wired == "yes" || strings.HasPrefix(wired, "error") || isObservedStamp(observed),
 		Detected:             detected,
 		AtRest:               atRest,
 		Hook:                 d.hookModality,
 		Wired:                wired,
 		SetupHint:            d.setupHint,
 		AtRestScanIncomplete: incomplete,
+		Observed:             observed,
 	}
+}
+
+// observedColumn renders the OBSERVED cell. An agent with no hook backend, or
+// one whose hook has simply never fired here, reads "never" — the ledger holds
+// auspex's own execution record and nothing else, so at-rest-only agents never
+// stamp it. An unreadable ledger degrades the rest to "unknown" rather than
+// letting a read failure print as "never".
+func (d agentDescriptor) observedColumn(stamps map[string]time.Time, ledgerReadable bool) string {
+	// A forensic-only agent has no key in the ledger to read, so its answer does
+	// not depend on whether the ledger is readable. Reporting "unknown" here
+	// would imply a stamp that nothing can write.
+	if d.hookAgent == "" {
+		return observedNever
+	}
+	if !ledgerReadable {
+		return observedUnknown
+	}
+	at, ok := stamps[d.hookAgent]
+	if !ok {
+		return observedNever
+	}
+	return at.Format(time.RFC3339)
+}
+
+// isObservedStamp reports whether an OBSERVED cell carries an actual execution
+// record, as opposed to "never" or "unknown".
+func isObservedStamp(observed string) bool {
+	return observed != observedNever && observed != observedUnknown
+}
+
+// agentCoverage reads the per-agent coverage ledger from the shared state
+// database and reports whether it was readable at all. Only an absent database
+// counts as readable-and-empty — that is the ordinary state of a machine where
+// no hook has run, and it yields "never". Every other stat failure (a
+// permission denial, a broken link) is a read failure and yields "unknown": a
+// ledger auspex cannot look at must never be reported as one that holds
+// nothing.
+//
+// The open is read-only, so the report creates no database, repairs no
+// permissions, and does not take the exclusive lock a concurrent hook is
+// waiting on. It reads the default path only; a hook invoked by hand with
+// --state-db pointing elsewhere writes a ledger this report cannot see.
+// `hook install` never emits that flag, so installed hooks always agree.
+func agentCoverage(home string) (map[string]time.Time, bool) {
+	path := hookStateDBPath(home)
+	if _, err := os.Stat(path); err != nil {
+		return nil, errors.Is(err, fs.ErrNotExist)
+	}
+	db, err := state.OpenReadOnly(path, agentsStateLockTimeout)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = db.Close() }()
+	stamps, err := ledger.Read(db.Bolt())
+	if err != nil {
+		return nil, false
+	}
+	return stamps, true
 }
 
 func (d agentDescriptor) configPresent(home string) bool {
@@ -750,13 +843,14 @@ func dirPresent(path string) bool {
 // writeAgentsTable renders the rows as a clean aligned text table via tabwriter,
 // matching the repo's text-output style. CONFIG is yes/no for a local config
 // signal; ARTIFACTS reports the at-rest parser result, LIVE reports hook/plugin
-// modality, and WIRED says whether auspex is already installed there.
+// modality, WIRED says whether auspex is already installed there, and OBSERVED
+// reports when auspex's hook last actually ran for that agent on this machine.
 func writeAgentsTable(w io.Writer, rows []agentRow) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "AGENT\tCONFIG\tARTIFACTS\tLIVE\tWIRED\tNEXT")
+	_, _ = fmt.Fprintln(tw, "AGENT\tCONFIG\tARTIFACTS\tLIVE\tWIRED\tOBSERVED\tNEXT")
 	for _, r := range rows {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Agent, yesNo(r.Detected), r.AtRest, r.Hook, r.Wired, r.SetupHint)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.Agent, yesNo(r.Detected), r.AtRest, r.Hook, r.Wired, r.Observed, r.SetupHint)
 	}
 	_ = tw.Flush()
 }

@@ -580,6 +580,18 @@ Windows PowerShell equivalents:
 Get-Content "$HOME\.auspex\live.ndjson" -Wait
 ```
 
+`hook status` verifies configuration; the `OBSERVED` column of `auspex agents`
+verifies execution. It reports the last time auspex's hook actually ran for
+that agent on this machine, so a row reading `wired: yes` with
+`observed: never` is the fleet signal worth chasing: the integration is in
+place but has never fired here. Read it carefully — `never` means no hook
+execution was recorded on this endpoint, not that the agent never ran and not
+that nothing happened. Agents seen only by at-rest scanning never stamp the
+column at all, and an agent that has simply not been used since installation
+reads `never` legitimately. The stamp is per endpoint and is not shipped with
+records; comparing coverage across a fleet means collecting this report from
+each machine.
+
 For live OTLP/HTTP, run `auspex collect` and point the agent exporter at
 `http://127.0.0.1:4318/v1/logs` when the agent supports OTLP/HTTP logs. See
 [cli.md](cli.md#collect) for per-agent exporter notes.

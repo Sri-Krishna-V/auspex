@@ -44,8 +44,28 @@ artifact, wired hook or plugin, or unreadable hook configuration. `--all`
 includes absent supported agents. Each row reports whether the agent has a
 local config signal (`CONFIG`), whether auspex found at-rest
 artifacts (`ARTIFACTS`), its live capture mode (`LIVE`), whether auspex is wired
-there (`WIRED`), and the next useful command (`NEXT`). It makes no changes,
-executes no agent binary, and supports text (default) or JSON output.
+there (`WIRED`), when auspex's hook last ran for it (`OBSERVED`), and the next
+useful command (`NEXT`). It makes no changes, executes no agent binary, and
+supports text (default) or JSON output.
+
+`OBSERVED` is the last time auspex's hook actually ran for that agent on this
+machine. `never` means no hook execution was recorded here — not that the agent
+never ran, and not that nothing happened. Agents seen only by at-rest scanning
+never stamp this column. It is the complement of `WIRED`: `WIRED` reads
+configuration, `OBSERVED` reads auspex's own execution record, so
+`wired: yes` + `at_rest: found` + `observed: never` is a legitimate and common
+combination — a wired agent that has not been used since the hook was
+installed. `unknown` appears only when the local state database exists but
+could not be read; a machine with no state database at all reports `never`,
+because nothing has ever been recorded there. The report reads the default
+state database and takes no write lock on it, so running it cannot disturb a
+live hook; a hook invoked by hand with `--state-db` pointing elsewhere records
+into a ledger this report does not read. `hook install` never writes that flag,
+so installed hooks always agree with the report.
+
+auspex records nothing between callbacks except this stamp, so the column
+cannot support a rate, a percentage, or a "healthy/stale" verdict: an agent
+that ran zero times today and a developer on holiday are the same observation.
 
 For OpenClaw, `WIRED=yes` means the native package is present and readable in
 the selected Gateway plugin config root and matches auspex's manifest, package,

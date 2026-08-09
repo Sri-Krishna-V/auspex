@@ -18,7 +18,13 @@ see [agent-coverage.md](agent-coverage.md).
 `hook` reads one lifecycle payload from stdin. The
 [coverage matrix](agent-coverage.md#matrix) lists supported hook and plugin
 targets, default paths, enforcement capability, and host limits.
-`auspex agents --all` reports the supported local-agent inventory.
+`auspex agents --all` reports the supported local-agent inventory. Its
+`OBSERVED` column is the last time a hook callback actually ran for that agent
+on this machine — the one place auspex reports its own execution rather than
+its configuration. `never` means no hook execution was recorded here; it does
+not mean the agent never ran, and it does not mean nothing happened. Agents
+seen only by at-rest scanning never stamp the column, so a wired agent that has
+not been used since installation legitimately reads `never`.
 
 Default installation targets the current user's effective agent path and honors
 the documented agent-root environment overrides. On native Windows, `~` means

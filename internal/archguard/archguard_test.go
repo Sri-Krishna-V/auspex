@@ -31,7 +31,7 @@ const internalPrefix = modulePath + "/internal/"
 var (
 	corePkgs       = []string{"applypatch", "model", "redact", "rule", "sequence", "finding", "pipeline", "output", "winfile"}
 	forensicsPkgs  = []string{"extract", "discover", "casebundle"}
-	monitoringPkgs = []string{"hook", "otel", "state"}
+	monitoringPkgs = []string{"hook", "otel", "state", "ledger"}
 )
 
 // nonPlane lists internal packages that intentionally belong to no plane:
@@ -40,8 +40,9 @@ var (
 // check in TestPackageImportSeam fails if a new unclassified package appears.
 var nonPlane = map[string]bool{"version": true, "archguard": true}
 
-// bboltAllowed lists the only internal packages permitted to import bbolt.
-var bboltAllowed = map[string]bool{"state": true, "sequence": true}
+// bboltAllowed lists the only internal packages permitted to import bbolt:
+// state owns the file, and sequence and ledger each own one bucket in it.
+var bboltAllowed = map[string]bool{"state": true, "sequence": true, "ledger": true}
 
 // ---------------------------------------------------------------------------
 // A2a — package-level guard (go list)
@@ -119,7 +120,7 @@ func TestPackageImportSeam(t *testing.T) {
 			}
 			// bbolt allowlist: only {state, sequence} may touch it.
 			if imp == bboltPath && !bboltAllowed[pkg] {
-				t.Errorf("package %q imports %s but is not on the bbolt allowlist {state, sequence}", pkg, bboltPath)
+				t.Errorf("package %q imports %s but is not on the bbolt allowlist {state, sequence, ledger}", pkg, bboltPath)
 			}
 		}
 	}
@@ -178,11 +179,11 @@ func internalImports(t *testing.T) map[string][]string {
 
 // forbidMonitoring / forbidForensics are the plane packages a given entrypoint
 // class must not import. scan/timeline/case are the forensics-side entrypoints:
-// they must not touch the monitoring plane (hook/otel/state) or bbolt.
+// they must not touch the monitoring plane (hook/otel/state/ledger) or bbolt.
 // hook/collect are the monitoring-side entrypoints: they must not touch the
 // forensics plane (extract/discover/casebundle).
 var (
-	forbidMonitoring = []string{"hook", "otel", "state", bboltPath}
+	forbidMonitoring = []string{"hook", "otel", "state", "ledger", bboltPath}
 	forbidForensics  = []string{"extract", "discover", "casebundle"}
 )
 
