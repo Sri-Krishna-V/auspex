@@ -43,6 +43,15 @@ func TestEnforcementDecisionValidate(t *testing.T) {
 	if err := failOpen.Validate(); err != nil {
 		t.Fatalf("valid fail-open decision: %v", err)
 	}
+
+	withheld := validEnforcementDecision()
+	withheld.Mode = EnforcementModeEnforce
+	withheld.Reason = EnforcementReasonFailOpen
+	withheld.WithheldRuleID = "test.rule"
+	withheld.WithheldRuleVersion = "1.0"
+	if err := withheld.Validate(); err != nil {
+		t.Fatalf("valid fail-open decision naming a withheld rule: %v", err)
+	}
 }
 
 func TestEnforcementDecisionRejectsContradictions(t *testing.T) {
@@ -72,6 +81,30 @@ func TestEnforcementDecisionRejectsContradictions(t *testing.T) {
 			d.DenyRuleID = "test.rule"
 			d.DenyRuleVersion = "1.0"
 		}, "no_override"},
+		{"withheld rule on deny", func(d *EnforcementDecision) {
+			d.Mode = EnforcementModeEnforce
+			d.Decision = EnforcementDecisionDeny
+			d.Reason = EnforcementReasonEnforceRuleMatch
+			d.DenyRuleID = "test.rule"
+			d.DenyRuleVersion = "1.0"
+			d.WithheldRuleID = "test.rule"
+			d.WithheldRuleVersion = "1.0"
+		}, "withheld rule requires no_override with fail_open"},
+		{"withheld rule in monitor mode", func(d *EnforcementDecision) {
+			d.WithheldRuleID = "test.rule"
+			d.WithheldRuleVersion = "1.0"
+		}, "withheld rule requires no_override with fail_open"},
+		{"withheld rule without version", func(d *EnforcementDecision) {
+			d.Mode = EnforcementModeEnforce
+			d.Reason = EnforcementReasonFailOpen
+			d.WithheldRuleID = "test.rule"
+		}, "withheld rule requires both id and version"},
+		{"withheld rule absent from matches", func(d *EnforcementDecision) {
+			d.Mode = EnforcementModeEnforce
+			d.Reason = EnforcementReasonFailOpen
+			d.WithheldRuleID = "other.rule"
+			d.WithheldRuleVersion = "1.0"
+		}, "absent from rule_ids"},
 		{"empty events", func(d *EnforcementDecision) { d.ActionEventIDs = nil }, "action_event_ids"},
 		{"duplicate rules", func(d *EnforcementDecision) { d.RuleIDs = []string{"test.rule", "test.rule"} }, "duplicate"},
 		{"not hook", func(d *EnforcementDecision) { d.SourceType = SourceArtifact }, "source_type"},

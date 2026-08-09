@@ -56,6 +56,14 @@ type EnforcementDecision struct {
 
 	DenyRuleID      string `json:"deny_rule_id,omitempty"`
 	DenyRuleVersion string `json:"deny_rule_version,omitempty"`
+
+	// WithheldRuleID names the rule that would have denied when a fail-open
+	// withdrew the decision, so a suppressed block is auditable rather than
+	// silent. It is set only on no_override with fail_open, and only when the
+	// run was tainted by a finding that failed to emit. The record shares the
+	// sink whose failure caused the taint: a durably broken sink loses it too.
+	WithheldRuleID      string `json:"withheld_rule_id,omitempty"`
+	WithheldRuleVersion string `json:"withheld_rule_version,omitempty"`
 }
 
 // Validate enforces the closed enforcement-decision wire contract.
@@ -108,6 +116,17 @@ func (d EnforcementDecision) Validate() error {
 	}
 	if d.Decision != EnforcementDecisionDeny && (d.DenyRuleID != "" || d.DenyRuleVersion != "") {
 		return fmt.Errorf("enforcement decision %s: no_override decision names a deny rule", d.DecisionID)
+	}
+	if d.WithheldRuleID != "" || d.WithheldRuleVersion != "" {
+		if d.Decision != EnforcementDecisionNoOverride || d.Reason != EnforcementReasonFailOpen {
+			return fmt.Errorf("enforcement decision %s: withheld rule requires no_override with fail_open", d.DecisionID)
+		}
+		if d.WithheldRuleID == "" || d.WithheldRuleVersion == "" {
+			return fmt.Errorf("enforcement decision %s: withheld rule requires both id and version", d.DecisionID)
+		}
+		if !containsValue(d.RuleIDs, d.WithheldRuleID) {
+			return fmt.Errorf("enforcement decision %s: withheld rule %q is absent from rule_ids", d.DecisionID, d.WithheldRuleID)
+		}
 	}
 	return nil
 }

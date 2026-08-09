@@ -16,6 +16,7 @@ import (
 
 	"github.com/Sri-Krishna-V/auspex/internal/model"
 	"github.com/Sri-Krishna-V/auspex/internal/output"
+	"github.com/Sri-Krishna-V/auspex/internal/pipeline"
 	"github.com/Sri-Krishna-V/auspex/internal/state"
 	builtinrules "github.com/Sri-Krishna-V/auspex/rules"
 )
@@ -1568,4 +1569,101 @@ func TestInstallEnforceRejectedForOpenCode(t *testing.T) {
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Errorf("plugin should not exist after a refused enforce install, stat err = %v", statErr)
 	}
+}
+
+// TestHookEnforcementDecisionNamesWithheldRule is the first test to assert the
+// contents of a fail-open enforcement record. It drives hookEnforcementDecision
+// directly rather than through the CLI: a findings-sink failure cannot be
+// induced from the command line, because the file sink cannot be made to reject
+// one record and accept the next, and the HTTP sink deliberately buffers instead
+// of reporting per-record write errors (internal/output/httpsink.go). The
+// pipeline-side capture is covered by TestProcessTaintPreservesWithheldRuleFromEarlierEvent.
+func TestHookEnforcementDecisionNamesWithheldRule(t *testing.T) {
+	base := func() *pipeline.EnforceDecision {
+		return &pipeline.EnforceDecision{
+			Matched:        true,
+			ActionEventIDs: []string{"hook-run-1-a"},
+			FindingIDs:     []string{"fnd-0123456789abcdef01234567"},
+			RuleIDs:        []string{"enforce_test.critical_block"},
+			SourceAgent:    model.AgentClaudeCode,
+			SourceType:     model.SourceHook,
+			SessionID:      "s1",
+		}
+	}
+	opts := hookOptions{enforce: true, sel: emitSelection{findings: true}}
+
+	t.Run("tainted run names the rule it withheld", func(t *testing.T) {
+		dec := base()
+		dec.Tainted = true
+		dec.WithheldRuleID = "enforce_test.critical_block"
+		dec.WithheldRuleVersion = "1.0"
+
+		got := hookEnforcementDecision("run-1", opts, dec, nil, 0)
+		if got == nil {
+			t.Fatal("no enforcement decision for a tainted match")
+		}
+		if got.Decision != model.EnforcementDecisionNoOverride || got.Reason != model.EnforcementReasonFailOpen {
+			t.Fatalf("decision = %q/%q, want no_override/fail_open", got.Decision, got.Reason)
+		}
+		if got.Mode != model.EnforcementModeEnforce {
+			t.Fatalf("mode = %q, want enforce", got.Mode)
+		}
+		if got.WithheldRuleID != "enforce_test.critical_block" || got.WithheldRuleVersion != "1.0" {
+			t.Fatalf("withheld rule = %q/%q, want enforce_test.critical_block/1.0: a suppressed deny must stay auditable",
+				got.WithheldRuleID, got.WithheldRuleVersion)
+		}
+		if got.DenyRuleID != "" {
+			t.Fatalf("fail-open decision names a deny rule: %q", got.DenyRuleID)
+		}
+		if err := got.Validate(); err != nil {
+			t.Fatalf("fail-open decision naming a withheld rule must satisfy the wire contract: %v", err)
+		}
+	})
+
+	t.Run("fail-open without an eligible match omits the fields", func(t *testing.T) {
+		dec := base()
+		dec.ObserveOnly = true
+
+		got := hookEnforcementDecision("run-1", opts, dec, nil, 0)
+		if got.Reason != model.EnforcementReasonFailOpen {
+			t.Fatalf("reason = %q, want fail_open", got.Reason)
+		}
+		if got.WithheldRuleID != "" || got.WithheldRuleVersion != "" {
+			t.Fatalf("withheld rule = %q/%q, want empty: nothing would have blocked",
+				got.WithheldRuleID, got.WithheldRuleVersion)
+		}
+		if err := got.Validate(); err != nil {
+			t.Fatalf("validate: %v", err)
+		}
+		encoded, err := json.Marshal(got)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		var record map[string]any
+		if err := json.Unmarshal(encoded, &record); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if _, ok := record["withheld_rule_id"]; ok {
+			t.Fatalf("empty withheld rule reached the wire: %s", encoded)
+		}
+	})
+
+	t.Run("a clean deny names no withheld rule", func(t *testing.T) {
+		dec := base()
+		dec.Blocked = true
+		dec.Reason = defaultDenyMessage
+		dec.DenyRuleID = "enforce_test.critical_block"
+		dec.DenyRuleVersion = "1.0"
+
+		got := hookEnforcementDecision("run-1", opts, dec, nil, 0)
+		if got.Decision != model.EnforcementDecisionDeny {
+			t.Fatalf("decision = %q, want deny", got.Decision)
+		}
+		if got.WithheldRuleID != "" || got.WithheldRuleVersion != "" {
+			t.Fatalf("deny names a withheld rule: %q/%q", got.WithheldRuleID, got.WithheldRuleVersion)
+		}
+		if err := got.Validate(); err != nil {
+			t.Fatalf("validate: %v", err)
+		}
+	})
 }

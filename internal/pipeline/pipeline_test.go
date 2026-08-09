@@ -204,6 +204,93 @@ func TestProcessEnforceWithheldOnEmitError(t *testing.T) {
 	if dec.Blocked {
 		t.Fatalf("Blocked = true, want false: an EmitFinding failure must withhold the enforce signal")
 	}
+	if dec.WithheldRuleID != "test.enforce_block" || dec.WithheldRuleVersion != "1" {
+		t.Fatalf("withheld rule = %q/%q, want test.enforce_block/1: a withdrawn deny must still name its rule",
+			dec.WithheldRuleID, dec.WithheldRuleVersion)
+	}
+	if dec.DenyRuleID != "" || dec.DenyRuleVersion != "" {
+		t.Fatalf("deny rule = %q/%q, want empty: a tainted decision must not name a deny rule",
+			dec.DenyRuleID, dec.DenyRuleVersion)
+	}
+}
+
+// failAfterSink writes successfully for the first ok records and fails on every
+// record after that, so a multi-event hook payload can promote a deny cleanly
+// and then be tainted by a later write failure.
+type failAfterSink struct {
+	ok int
+	n  int
+}
+
+func (s *failAfterSink) Write(b []byte) (int, error) {
+	s.n++
+	if s.n > s.ok {
+		return 0, fmt.Errorf("sink write failed")
+	}
+	return len(b), nil
+}
+func (s *failAfterSink) Close() error { return nil }
+
+// TestProcessTaintPreservesWithheldRuleFromEarlierEvent covers the two ways the
+// withheld identity can be lost. A deny promoted on an earlier event of the
+// same payload outranks the current event's own eligible match, and once the
+// withheld rule is recorded a later tainted event must not overwrite it.
+func TestProcessTaintPreservesWithheldRuleFromEarlierEvent(t *testing.T) {
+	enforce := true
+	eng, err := rule.NewEngine([]rule.Source{{Name: "test", Rules: []rule.Rule{
+		{
+			ID: "test.exec_block", Title: "exec", Severity: model.SeverityMedium, Version: "1",
+			Expr: `event.event_type == "command.exec"`, Enforce: &enforce,
+		},
+		{
+			ID: "test.read_block", Title: "read", Severity: model.SeverityMedium, Version: "2",
+			Expr: `event.event_type == "file.read"`, Enforce: &enforce,
+		},
+	}}})
+	if err != nil {
+		t.Fatalf("compile engine: %v", err)
+	}
+
+	// One clean finding write promotes test.exec_block, then every later write fails.
+	em := output.NewWithSink(&failAfterSink{ok: 1}, &bytes.Buffer{}, "run-x")
+	dec := &EnforceDecision{}
+	p := New(eng, em, Selection{Findings: true}, finding.Options{}, nil).WithEnforce(dec)
+
+	if err := p.Process(sampleEvent(), "src"); err != nil {
+		t.Fatal(err)
+	}
+	if dec.DenyRuleID != "test.exec_block" {
+		t.Fatalf("first event deny rule = %q, want test.exec_block", dec.DenyRuleID)
+	}
+
+	read := sampleEvent()
+	read.EventID = "ev-2"
+	read.EventType = model.EventFileRead
+	read.Command = ""
+	read.FilePath = "/etc/shadow"
+	if err := p.Process(read, "src"); err != nil {
+		t.Fatal(err)
+	}
+	if dec.WithheldRuleID != "test.exec_block" || dec.WithheldRuleVersion != "1" {
+		t.Fatalf("withheld rule = %q/%q, want test.exec_block/1: the promoted deny outranks this event's own match",
+			dec.WithheldRuleID, dec.WithheldRuleVersion)
+	}
+
+	// A third tainted event must not overwrite the recorded identity.
+	third := sampleEvent()
+	third.EventID = "ev-3"
+	third.EventType = model.EventFileRead
+	third.Command = ""
+	third.FilePath = "/etc/gshadow"
+	if err := p.Process(third, "src"); err != nil {
+		t.Fatal(err)
+	}
+	if dec.WithheldRuleID != "test.exec_block" {
+		t.Fatalf("withheld rule = %q after a later taint, want test.exec_block: first write must win", dec.WithheldRuleID)
+	}
+	if dec.Blocked {
+		t.Fatal("Blocked = true, want false after a taint")
+	}
 }
 
 // TestProcessEnforceRecordedOnCleanRun pins the positive direction: a single
