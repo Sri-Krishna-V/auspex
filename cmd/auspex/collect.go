@@ -292,11 +292,15 @@ func newCollector(cfg collectorConfig) (*collector, error) {
 
 	var eng *rule.Engine
 	if cfg.sel.findings || len(cfg.ruleDirs) > 0 || cfg.noBuiltin {
-		var err error
-		eng, err = buildEngine(cfg.ruleDirs, cfg.noBuiltin)
+		var (
+			err  error
+			info rulesetInfo
+		)
+		eng, info, err = buildEngineWithRuleset(cfg.ruleDirs, cfg.noBuiltin)
 		if err != nil {
 			return nil, err
 		}
+		applyRulesetInfo(cfg.emit, info)
 	}
 	if cfg.sel.indicators {
 		c.indicators = output.NewIndicatorAccumulator()

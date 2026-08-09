@@ -152,7 +152,7 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Explicit rule sources are validated even when findings are not emitted.
-	sources, err := loadRuleSources(rf.dirs, rf.noBuiltin)
+	sources, eclipsed, err := loadRuleSources(rf.dirs, rf.noBuiltin)
 	if err != nil {
 		return failScan(em, err.Error())
 	}
@@ -164,6 +164,9 @@ func runScan(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			return failScan(em, err.Error())
 		}
+		// Only a catalog that compiled actually ran, so only then is there
+		// something to attest. An event-only default run leaves the key absent.
+		applyRulesetInfo(em, rulesetInfo{digest: rulesetDigest(sources, rf.noBuiltin), eclipsed: eclipsed})
 	}
 
 	sc := &scanner{emit: em, caseID: *caseID, sel: sel, profile: profile}

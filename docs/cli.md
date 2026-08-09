@@ -44,8 +44,28 @@ artifact, wired hook or plugin, or unreadable hook configuration. `--all`
 includes absent supported agents. Each row reports whether the agent has a
 local config signal (`CONFIG`), whether auspex found at-rest
 artifacts (`ARTIFACTS`), its live capture mode (`LIVE`), whether auspex is wired
-there (`WIRED`), and the next useful command (`NEXT`). It makes no changes,
-executes no agent binary, and supports text (default) or JSON output.
+there (`WIRED`), when auspex's hook last ran for it (`OBSERVED`), and the next
+useful command (`NEXT`). It makes no changes, executes no agent binary, and
+supports text (default) or JSON output.
+
+`OBSERVED` is the last time auspex's hook actually ran for that agent on this
+machine. `never` means no hook execution was recorded here — not that the agent
+never ran, and not that nothing happened. Agents seen only by at-rest scanning
+never stamp this column. It is the complement of `WIRED`: `WIRED` reads
+configuration, `OBSERVED` reads auspex's own execution record, so
+`wired: yes` + `at_rest: found` + `observed: never` is a legitimate and common
+combination — a wired agent that has not been used since the hook was
+installed. `unknown` appears only when the local state database exists but
+could not be read; a machine with no state database at all reports `never`,
+because nothing has ever been recorded there. The report reads the default
+state database and takes no write lock on it, so running it cannot disturb a
+live hook; a hook invoked by hand with `--state-db` pointing elsewhere records
+into a ledger this report does not read. `hook install` never writes that flag,
+so installed hooks always agree with the report.
+
+auspex records nothing between callbacks except this stamp, so the column
+cannot support a rate, a percentage, or a "healthy/stale" verdict: an agent
+that ran zero times today and a developer on holiday are the same observation.
 
 For OpenClaw, `WIRED=yes` means the native package is present and readable in
 the selected Gateway plugin config root and matches auspex's manifest, package,
@@ -245,6 +265,31 @@ auspex writes typed NDJSON streams. Each record carries a `record_type` (`event`
 `username`, and `uid`; set `AUSPEX_DEVICE_ID` to add a stable opaque
 `endpoint.device_id` for fleet joins.
 `enforcement` is hook-only; `scan_summary` is scan-only.
+
+A record also carries `ruleset_digest` whenever the run resolved a rule
+catalog: `sha256:` plus a fold of every loaded rule file's raw bytes, keyed by
+rule id. Two endpoints running the same catalog report the same value, so a
+receiver can group a fleet by the rules that actually ran instead of trusting
+that they match. It is byte-sensitive by design — a `--rules-dir` stub that
+keeps a built-in's id and declared `version` but neuters its expression changes
+the digest — and it is sorted by rule id, not path, so a different local rules
+directory does not. The key is absent when no catalog was resolved for that
+record (an `--emit events` run compiles no engine, and a diagnostic may be
+written before rules load); absence means "not asked", not "nothing found".
+The digest attests which rules were loaded and nothing else: it cannot show
+that auspex was invoked, that a hook is still wired, or that a decision was
+enforced.
+
+An `event` record derived from a command also carries `opacity_score` and
+`opacity_reasons`: how many reasons the command's effect could not be read from
+its text, and which. The score is always the length of the array. A `0` is a
+positive claim — auspex parsed the command and saw everything it does — so an
+unreadable command is left with **neither key** rather than scored 0. Absence
+means auspex did not look or could not read it: the event carries no command, or
+the command was unparseable, over the analyzer's size limit, or in a dialect it
+cannot project. Filtering on `opacity_score > 0` finds wrapped actions; finding
+the commands auspex never read means filtering on the key being absent. See the
+[event model](event-model.md) for the marker list.
 
 Event and finding value fields are redacted before emission. This includes
 credential query parameters, URL userinfo passwords, Basic/Bearer authorization

@@ -379,8 +379,14 @@ in the user's profile unless its ACL says otherwise, so forward records promptly
 to an admin-controlled sink when tamper resistance matters. An external
 `--rules-dir` is part of this policy surface: deploy it outside agent workspaces
 and make it read-only to the monitored user when enforcement must resist local
-tampering. Official binaries embed the shipped catalog; a private immutable
-catalog can instead be built after editing `rules/<group>/*.yaml`. GUI-launched
+tampering. Every record carries a `ruleset_digest` over the rule files that were
+actually loaded, so a receiver can alert on an endpoint whose digest drifts from
+the fleet's — the detection for a catalog quietly replaced with stubs, which is
+otherwise indistinguishable from a healthy endpoint. Group by that value rather
+than assuming a uniform policy. It attests the catalog only; an operator who can
+swap rule files can also unwire the hook, which the digest cannot show. Official
+binaries embed the shipped catalog; a private immutable catalog can instead be
+built after editing `rules/<group>/*.yaml`. GUI-launched
 agents may not inherit secrets exported by a root or login-shell installer; make
 `AUSPEX_HTTP_TOKEN` or `AUSPEX_HTTP_HMAC_KEY` available to the actual agent
 process. File output plus a managed forwarder is usually safer than direct HTTP
@@ -573,6 +579,18 @@ Windows PowerShell equivalents:
 .\auspex.exe scan --path "$HOME\.codex" --emit findings --emit indicators
 Get-Content "$HOME\.auspex\live.ndjson" -Wait
 ```
+
+`hook status` verifies configuration; the `OBSERVED` column of `auspex agents`
+verifies execution. It reports the last time auspex's hook actually ran for
+that agent on this machine, so a row reading `wired: yes` with
+`observed: never` is the fleet signal worth chasing: the integration is in
+place but has never fired here. Read it carefully — `never` means no hook
+execution was recorded on this endpoint, not that the agent never ran and not
+that nothing happened. Agents seen only by at-rest scanning never stamp the
+column at all, and an agent that has simply not been used since installation
+reads `never` legitimately. The stamp is per endpoint and is not shipped with
+records; comparing coverage across a fleet means collecting this report from
+each machine.
 
 For live OTLP/HTTP, run `auspex collect` and point the agent exporter at
 `http://127.0.0.1:4318/v1/logs` when the agent supports OTLP/HTTP logs. See

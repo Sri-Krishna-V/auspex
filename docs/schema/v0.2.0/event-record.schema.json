@@ -19,6 +19,11 @@
     "schema_version": { "const": "0.2.0" },
     "record_type": { "const": "event" },
     "run_id": { "type": "string", "minLength": 1 },
+    "ruleset_digest": {
+      "description": "Attestation of the rule catalog this run compiled: a sha256 fold of every loaded rule file's raw bytes, keyed by rule id, so two endpoints running an identical catalog report an identical value and a stub rule reusing a built-in's id and version does not. Absent when no catalog was resolved for this record: an event-only run never builds an engine, and a diagnostic may be written before rules are loaded. It attests which rules were loaded, not that Auspex was invoked at all.",
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
     "endpoint": { "$ref": "#/$defs/endpoint" },
     "case_id": { "type": "string" },
     "event_id": { "type": "string", "minLength": 1 },
@@ -92,6 +97,27 @@
     "diff_bytes": { "type": "integer", "minimum": 0 },
     "exit_code": { "type": "integer" },
     "duration_ms": { "type": "integer", "minimum": 0 },
+    "opacity_score": {
+      "description": "How many reasons the effect of this command could not be read from the command text alone; always equal to the length of opacity_reasons. A 0 is a positive claim that auspex parsed the command and saw everything it does. Absent means auspex did not look or could not read the command: the event carries none, or the command was unparseable, over the analyzer's size limit, or in a dialect it cannot project. Absent is never 0.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "opacity_reasons": {
+      "description": "The opacity markers counted by opacity_score, in a fixed canonical order so two endpoints observing the same command emit an identical array. Present only alongside a non-zero opacity_score.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "detached",
+          "dynamic_argument",
+          "encoded_payload",
+          "inline_interpreter",
+          "piped_to_interpreter"
+        ]
+      }
+    },
     "approval_required": { "type": "boolean" },
     "approval_decision": { "type": "string", "enum": ["allowed", "denied", "asked"] },
     "approval_reason": { "type": "string" },

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Sri-Krishna-V/auspex/internal/finding"
 	"github.com/Sri-Krishna-V/auspex/internal/hook"
+	"github.com/Sri-Krishna-V/auspex/internal/ledger"
 	"github.com/Sri-Krishna-V/auspex/internal/model"
 	"github.com/Sri-Krishna-V/auspex/internal/output"
 	"github.com/Sri-Krishna-V/auspex/internal/pipeline"
@@ -27,6 +28,18 @@ import (
 // bounded well below the common 10-second tool-hook timeout; scans and the
 // long-running collector retain their 30-second default.
 const defaultHookHTTPTimeout = 5 * time.Second
+
+// State-database lock timeouts, both deliberately short: a contended lock on
+// the agent's critical path must fail open rather than stall it.
+const (
+	// hookStateLockTimeout bounds the sequence path, where evaluation cannot
+	// proceed until the window is loaded.
+	hookStateLockTimeout = 250 * time.Millisecond
+	// coverageStampLockTimeout bounds the coverage stamp on runs that would
+	// otherwise open no state at all. Nothing waits on that write, so it gives
+	// up far sooner and simply does not record.
+	coverageStampLockTimeout = 50 * time.Millisecond
+)
 
 // noDecisionMessage is the only enforce-mode failure detail written to the
 // invoking host. Once open, the operator-facing record sink carries available
@@ -325,10 +338,12 @@ func handleHook(event string, lc hook.Lifecycle, agent, sourceAgent string, stdi
 		if expandErr != nil {
 			return false, "", "", closeWithDiagnostic(expandErr)
 		}
-		eng, err = buildEngine(ruleDirs, opts.noBuiltin)
+		var info rulesetInfo
+		eng, info, err = buildEngineWithRuleset(ruleDirs, opts.noBuiltin)
 		if err != nil {
 			return false, "", "", closeWithDiagnostic(err)
 		}
+		applyRulesetInfo(em, info)
 	}
 	// Hook processes are short-lived, so sequence windows use the shared state
 	// database. Unavailable state skips sequence rules; it must not disable an
@@ -338,7 +353,7 @@ func handleHook(event string, lc hook.Lifecycle, agent, sourceAgent string, stdi
 	var stateErr error
 	if (opts.sel.findings || opts.enforce) && eng != nil {
 		if seqs := eng.SequenceRules(); len(seqs) > 0 {
-			stateDB, stateErr = openHookState(opts.stateDB)
+			stateDB, stateErr = openHookState(opts.stateDB, hookStateLockTimeout)
 			if stateErr != nil {
 				em.Diag("warn", fmt.Sprintf("state database unavailable, %d sequence rule(s) skipped for this event: %v", len(seqs), stateErr))
 			} else {
@@ -355,6 +370,19 @@ func handleHook(event string, lc hook.Lifecycle, agent, sourceAgent string, stdi
 	responseAgent := agent
 	if agent == hook.AgentCopilot && len(events) > 0 && events[0].SourceAgent == hook.AgentVSCode {
 		responseAgent = hook.AgentVSCode
+	}
+	// Record that auspex actually ran here, for this agent. Keyed on
+	// responseAgent, not the raw --agent flag: a Copilot callback carrying a VS
+	// Code payload is already attributed to VS Code in the events themselves,
+	// and the ledger has to name the same agent the inventory row does.
+	//
+	// MapEvents always yields at least one event today — a body that fails to
+	// decode still maps to a sparse observed event — so this gate does not fire
+	// in practice. It stands as a structural guard: a future mapping path that
+	// yields nothing observed must not stamp coverage for a callback that saw
+	// nothing.
+	if len(events) > 0 {
+		stampCoverage(stateDB, opts.stateDB, responseAgent, time.Now())
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for i := range events {
@@ -669,16 +697,45 @@ func findingOptions() finding.Options { return finding.Options{Now: time.Now()} 
 
 // openHookState opens the shared state database for one hook invocation: the
 // --state-db override, or state.db under a auspex-owned directory in the
-// user's home. The lock timeout is short because the agent is blocked while
-// the hook runs — a contended lock fails open rather than stalling it.
-func openHookState(override string) (*state.DB, error) {
+// user's home. timeout bounds the wait for bolt's exclusive lock; every caller
+// here passes a short one and fails open rather than stalling the agent.
+func openHookState(override string, timeout time.Duration) (*state.DB, error) {
 	path := override
 	if path == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("resolve home for state db: %w", err)
 		}
-		path = filepath.Join(home, ".auspex", "state.db")
+		path = hookStateDBPath(home)
 	}
-	return state.Open(path, 250*time.Millisecond)
+	return state.Open(path, timeout)
+}
+
+// hookStateDBPath is the default location of the shared state database. It is
+// resolved here rather than inline so the inventory command, which reads the
+// coverage ledger out of the same file, cannot drift from where the hook
+// writes it.
+func hookStateDBPath(home string) string {
+	return filepath.Join(home, ".auspex", "state.db")
+}
+
+// stampCoverage records that auspex's hook ran for this agent, reusing the
+// already-open state handle when there is one. Event-only runs never open the
+// state database — sequence windows need findings or enforce selected — so
+// they open their own with a much tighter lock timeout, because unlike the
+// sequence path nothing is blocked waiting on this write.
+//
+// Every error is swallowed deliberately, with no diagnostic. A missed stamp
+// under-reports coverage, which is the safe direction; a warning per contended
+// hook would pollute the record stream that enforce mode shares with it.
+func stampCoverage(db *state.DB, override, agent string, at time.Time) {
+	if db == nil {
+		opened, err := openHookState(override, coverageStampLockTimeout)
+		if err != nil {
+			return
+		}
+		defer func() { _ = opened.Close() }()
+		db = opened
+	}
+	_ = ledger.Touch(db.Bolt(), agent, at)
 }

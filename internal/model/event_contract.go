@@ -137,6 +137,22 @@ func (e Event) Validate() error {
 	if e.DurationMs != nil && *e.DurationMs < 0 {
 		return fmt.Errorf("event %s: invalid duration_ms %d", e.EventID, *e.DurationMs)
 	}
+	for _, reason := range e.OpacityReasons {
+		if !IsValidOpacityReason(reason) {
+			return fmt.Errorf("event %s: invalid opacity_reasons entry %q", e.EventID, reason)
+		}
+	}
+	// The score is defined as the count of the reasons beside it, so a receiver
+	// can trust either one alone. A reason list without a score would report
+	// opacity no aggregate can see.
+	if e.OpacityScore == nil {
+		if len(e.OpacityReasons) > 0 {
+			return fmt.Errorf("event %s: opacity_reasons without opacity_score", e.EventID)
+		}
+	} else if *e.OpacityScore != len(e.OpacityReasons) {
+		return fmt.Errorf("event %s: opacity_score %d does not match %d opacity_reasons",
+			e.EventID, *e.OpacityScore, len(e.OpacityReasons))
+	}
 	allow := make(map[string]struct{}, len(allowed))
 	for _, f := range allowed {
 		allow[f] = struct{}{}

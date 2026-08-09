@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -564,5 +565,110 @@ func TestProcessNormalizesWindowsPathsBeforeRulesAndOutput(t *testing.T) {
 	}
 	if strings.Contains(records.String(), `C:\\Users`) || !strings.Contains(records.String(), `C:/Users/dev/.ssh/authorized_keys`) {
 		t.Fatalf("event path was not normalized in output: %s", records.String())
+	}
+}
+
+// eventLines returns the event records emitted onto buf, decoded as generic
+// maps. The opacity assertions run against the marshaled record rather than the
+// struct so they cover the omitempty behaviour a receiver actually sees: an
+// unscored event must carry neither key, not a null or a zero.
+func eventLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	dec := json.NewDecoder(bytes.NewReader(buf.Bytes()))
+	for dec.More() {
+		var rec map[string]any
+		if err := dec.Decode(&rec); err != nil {
+			t.Fatalf("decode record: %v", err)
+		}
+		if rec["record_type"] == output.RecordEvent {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+// Process is the sole production EmitEvent caller, so it is the one place an
+// opacity score can be stamped. A command auspex parsed carries a score equal to
+// the number of reasons beside it; a command it could not parse and an event
+// with no command at all carry neither key.
+func TestProcessStampsOpacity(t *testing.T) {
+	cases := []struct {
+		name        string
+		mutate      func(*model.Event)
+		wantScore   float64
+		wantReasons []any
+		wantAbsent  bool
+	}{
+		{
+			name:        "wrapped decode piped into a shell",
+			mutate:      func(ev *model.Event) { ev.Command = `bash -c "base64 -d /tmp/p | sh"` },
+			wantScore:   3,
+			wantReasons: []any{"encoded_payload", "inline_interpreter", "piped_to_interpreter"},
+		},
+		{
+			name:      "fully readable command scores zero with no reasons",
+			mutate:    func(ev *model.Event) { ev.Command = "cat /etc/passwd" },
+			wantScore: 0,
+		},
+		{
+			name:       "unparseable command is left unscored",
+			mutate:     func(ev *model.Event) { ev.Command = "if [ ; then" },
+			wantAbsent: true,
+		},
+		{
+			name: "event without a command is left unscored",
+			mutate: func(ev *model.Event) {
+				ev.EventType = model.EventFileRead
+				ev.Command = ""
+				ev.FilePath = "/x/.env"
+			},
+			wantAbsent: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := sampleEvent()
+			tc.mutate(&ev)
+			var buf, diag bytes.Buffer
+			p := New(nil, output.New(&buf, &diag, "run-x"), Selection{Events: true}, finding.Options{}, nil)
+			if err := p.Process(ev, "/x/a.jsonl"); err != nil {
+				t.Fatalf("process: %v", err)
+			}
+			records := eventLines(t, &buf)
+			if len(records) != 1 {
+				t.Fatalf("got %d event records, want 1", len(records))
+			}
+			rec := records[0]
+
+			if tc.wantAbsent {
+				if _, ok := rec["opacity_score"]; ok {
+					t.Errorf("opacity_score present for an unanalyzed command: %v", rec["opacity_score"])
+				}
+				if _, ok := rec["opacity_reasons"]; ok {
+					t.Errorf("opacity_reasons present for an unanalyzed command: %v", rec["opacity_reasons"])
+				}
+				return
+			}
+
+			score, ok := rec["opacity_score"]
+			if !ok {
+				t.Fatalf("opacity_score missing from event record")
+			}
+			if score != tc.wantScore {
+				t.Errorf("opacity_score = %v, want %v", score, tc.wantScore)
+			}
+			reasons, present := rec["opacity_reasons"]
+			if tc.wantReasons == nil {
+				if present {
+					t.Errorf("opacity_reasons present for a zero score: %v", reasons)
+				}
+				return
+			}
+			if !reflect.DeepEqual(reasons, tc.wantReasons) {
+				t.Errorf("opacity_reasons = %v, want %v", reasons, tc.wantReasons)
+			}
+		})
 	}
 }

@@ -242,6 +242,8 @@ flowchart TD
 
 These types are alternatives, not layers — a recognized shell request becomes `command.exec`, not an additional `tool.call`. The `tool.call` fallback exists to preserve visibility when a safe specific mapping is unavailable, rather than guessing. A `confidence` field records how directly the source supported the mapping.
 
+Command events also carry an `opacity_score` and the `opacity_reasons` behind it, so one layer of wrapping — `bash -c "base64 -d p | sh"` — reports as 3 rather than as a single opaque string. A score of `0` is a real claim that auspex parsed the command and saw everything it does; a command it could not read carries **no score at all**, because emitting `0` there would fabricate a completeness auspex never had. See the [event model](docs/event-model.md) for the marker list.
+
 ### 3. Detection — one pass per event, with a fail-safe decision channel
 
 Every sensor feeds `pipeline.Process`, which handles exactly one normalized event. Rule evaluation and enforcement authorization are deliberately decoupled: an unrelated rule erroring out does not invalidate a clean match, but any failure to *emit* a record does.
@@ -575,6 +577,14 @@ auspex scan
 auspex scan --agent codex
 ```
 
+`auspex agents` reports a `WIRED` column read from configuration and an
+`OBSERVED` column read from auspex's own execution record: the last time a hook
+callback actually ran for that agent on this machine. `never` means no hook
+execution was recorded here — not that the agent never ran, and not that
+nothing happened. Agents seen only by at-rest scanning never stamp the column,
+so `wired: yes` with `observed: never` is a normal reading for an agent that
+has not been used since the hook was installed.
+
 ### Monitor and enforce
 
 Install live monitoring for any agent with
@@ -765,8 +775,11 @@ record modes, sinks, and exit codes.
 `scan`, `collect`, `hook EVENT`, `hook install`, and `rules check|list|test`
 accept `--rules-dir DIR` (repeatable) to add operator rules or replace embedded
 rules by id.
-Use `--no-builtin-rules` for an operator-only catalog. Full flag and output
-reference: [docs/cli.md](docs/cli.md).
+Use `--no-builtin-rules` for an operator-only catalog. A replacement is never
+silent: the run warns with the replaced ids, and every record carries a
+`ruleset_digest` over the rule files that actually loaded, so a swapped catalog
+is visible on the wire instead of looking like a healthy endpoint. Full flag and
+output reference: [docs/cli.md](docs/cli.md).
 
 ---
 

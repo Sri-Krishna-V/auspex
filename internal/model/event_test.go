@@ -25,6 +25,8 @@ var expectedCELFieldTypes = map[string]string{
 	"tool_call_id":      "string",
 	"exit_code":         "int|null",
 	"duration_ms":       "int|null",
+	"opacity_score":     "int|null",
+	"opacity_reasons":   "list(string)",
 	"approval_required": "bool|null",
 	"approval_decision": "string",
 	"approval_reason":   "string",
